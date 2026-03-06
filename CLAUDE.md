@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 C++20によるフォルマント音声合成器。日本語の全音素（母音・子音・濁音・半濁音・拗音・促音・撥音）を合成し、WAVファイルとして出力する。最終目標は約500行のコンパクトな単一ファイル実装。
 
-**現在の進捗**: MS1-MS4 完了（formant.cpp ~362行）。5母音 + 13子音 /h,s,n,m,ɾ,j,w,p,b,t,d,k,g/ + 促音・撥音を合成可能。テストスイート完備（10スイート / 67ケース）。
+**現在の進捗**: MS1-MS5 完了（formant.cpp ~399行）。5母音 + 20子音（破擦音・全摩擦音含む） /h,s,ɕ,ç,ɸ,z,ʑ,n,m,ɾ,j,w,p,b,t,d,k,g,tɕ,ts,dʑ,dz/ + 促音・撥音を合成可能。テストスイート完備（16スイート / 119ケース）。
 
 ## Build & Run
 
@@ -17,11 +17,11 @@ clang++ -std=c++20 -O2 -Wall -o formant formant.cpp
 # または Makefile
 make
 
-# 実行・再生（現在は固定シーケンス: は さ な ま ら や わ + あいうえお）
+# 実行・再生（固定シーケンス: 全音素テスト — 破裂音・破擦音・摩擦音・鼻音・弾き音・半母音・母音）
 ./formant                 # output.wav を生成
 afplay output.wav         # macOS で再生
 
-# テスト実行（10スイート / 67テストケース）
+# テスト実行（16スイート / 119テストケース）
 make test
 ```
 
@@ -39,7 +39,7 @@ make test
 
 | 名前 | 種別 | 状態 | 役割 |
 |------|------|------|------|
-| `SourceType` | enum class | 実装済 | 音源種別: `Impulse`, `Noise` |
+| `SourceType` | enum class | 実装済 | 音源種別: `Impulse`, `Noise`, `Mixed` |
 | `FormantParams` | struct (POD) | 実装済 | F1-F3, BW1-BW3, gain, source |
 | `Resonator` | struct | 実装済 | 2次IIR共振器。z1,z2 + set() + process() + reset() |
 | `NoiseGen` | struct | 実装済 | LCG乱数による白色雑音生成 |
@@ -48,7 +48,7 @@ make test
 | `lerp` | 関数 | 実装済 | 線形補間ヘルパー |
 | `ms2s` | 関数 | 実装済 | ミリ秒→秒変換ヘルパー |
 | `append` | 関数 | 実装済 | サンプル列追記ヘルパー |
-| `makePlosiveCV` | 関数 | 実装済 | 破裂音CV音節の生成ヘルパー（closure→burst→VOT→遷移→定常） |
+| `makePlosiveCV` | 関数 | 実装済 | 破裂音・破擦音CV音節の生成ヘルパー（closure→burst→VOT/frication→母音） |
 | `writeWav` | 関数 | 実装済 | WAVヘッダ+データ書き出し（16bit/mono） |
 | `Synthesizer` | class | 実装済 | 中核クラス。PhonemeEntry列を受け取り音声合成 |
 | `TextToPhoneme` | 関数群 | 未実装(MS6) | ひらがなUTF-8 → 音素列変換 |
@@ -105,12 +105,12 @@ y  = a0*x - b1*z1 - b2*z2
 | 3 | ノイズ音源 + 7子音 /h,s,n,m,ɾ,j,w/ | ~262行 | 中 | ✅ 完了 |
 | R1 | Synthesizerクラス抽出 + lerp関数 | ~276行 | — | ✅ 完了 |
 | 4 | 破裂音 /p,b,t,d,k,g/ + 促音 + 撥音 | ~360行 | ★最高 | ✅ 完了 |
-| 5 | 破擦音 + 残り摩擦音 → 全音素完成 | ~473行 | 中高 | |
+| 5 | 破擦音 + 残り摩擦音 → 全音素完成 | ~399行 | 中高 | ✅ 完了 |
 | 6 | ひらがなテキスト入力対応 | ~558行 | 低 | |
 | 7 | （任意）ピッチ制御 + 品質改善 | ~628行 | — | |
 
 リファクタリングポイント: ~~MS2後~~R1完了、MS4後、MS6後。
-テスト: 10スイート / 67ケース（`make test`で実行）
+テスト: 16スイート / 119ケース（`make test`で実行）
 
 ## Reference
 

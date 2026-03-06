@@ -26,7 +26,9 @@ TARGET     = formant
 
 TESTS = test_resonator test_noisegen test_impulsetrain test_lerp \
         test_helpers test_phoneme_data test_synth_basic test_synth_source \
-        test_wav test_integration
+        test_wav test_integration \
+        test_mixed_source test_new_fricatives test_affricates \
+        test_ha_row test_sa_row test_za_row
 TEST_BINS = $(addprefix tests/, $(TESTS))
 
 $(TARGET): formant.cpp
@@ -52,10 +54,10 @@ CMake は 500行規模では過剰。単一ファイルコンパイルで十分�
 ### ファイル構成: 単一ファイル（~500行）
 
 ```
-formant.cpp    // 全部入り1ファイル (~362行)
+formant.cpp    // 全部入り1ファイル (~399行)
 Makefile       // ビルド用（make / make test / make clean）
 test_framework.h  // 軽量テストフレームワーク
-tests/         // テストファイル（10スイート）
+tests/         // テストファイル（16スイート）
 ```
 
 ファイル内の論理的区切りをコメントで明示:
@@ -80,7 +82,7 @@ tests/         // テストファイル（10スイート）
 
 | 名前 | 種別 | 行数 | 状態 | 役割 |
 |------|------|------|------|------|
-| `SourceType` | enum class | 1行 | ✅ 実装済 | 音源種別（`Impulse` / `Noise`） |
+| `SourceType` | enum class | 1行 | ✅ 実装済 | 音源種別（`Impulse` / `Noise` / `Mixed`） |
 | `FormantParams` | struct (POD) | ~7行 | ✅ 実装済 | F1-F3, BW1-BW3, `gain`, `source`（SourceType） |
 | `Resonator` | struct + メソッド | ~20行 | ✅ 実装済 | 2次IIR共振器。状態(z1,z2)+係数+set()/process()/reset() |
 | `PhonemeEntry` | struct (POD) | ~4行 | ✅ 実装済 | FormantParams + duration_samples のペア |
@@ -96,7 +98,7 @@ tests/         // テストファイル（10スイート）
 
 ### 依存関係（一方向の木構造）
 
-**現在の実装（MS4/R1時点）:**
+**現在の実装（MS5時点）:**
 ```
 main()
   ├── PhonemeEntry の vector（音素列を直接構築）
@@ -245,7 +247,7 @@ make && ./formant "あいうえお" && afplay output.wav
 ### テストフレームワーク
 
 `test_framework.h` による軽量テストフレームワーク（外部依存なし）。
-`make test` で10スイート / 67テストケースを一括実行。
+`make test` で16スイート / 119テストケースを一括実行。
 
 各テストは `tests/test_*.cpp` に配置。`#define TEST_BUILD` でformant.cppのmain()を除外し、
 各コンポーネントを個別にテスト可能。
@@ -325,7 +327,7 @@ MS1 → MS2 → [refactor] → MS3 → MS4 → [refactor] → MS5 → MS6 → [r
 
 **リファクタリングポイント2**: フェーズ制御・テーブル構造の整理。
 
-### MS5: 破擦音 + 残り摩擦音 → 全音素完成（累計 ~473行）
+### MS5: 破擦音 + 残り摩擦音 → 全音素完成（累計 ~399行） ✅ 完了
 
 | タスク | 行数 |
 |--------|------|
@@ -338,6 +340,8 @@ MS1 → MS2 → [refactor] → MS3 → MS4 → [refactor] → MS5 → MS6 → [r
 **完了条件**: 五十音表のすべて（46清音+20濁音+5半濁音）が聞き取れる。
 
 **技術リスク: 中高** — 破擦音の破裂→摩擦接続タイミング。
+
+**実績**: 実装399行。SourceType::Mixedを追加し有声摩擦音を実現。makePlosiveCVを破擦音にも再利用し、新関数なしで全音素を達成。テスト16スイート/119ケース。
 
 ### MS6: ひらがなテキスト入力（累計 ~558行）
 
