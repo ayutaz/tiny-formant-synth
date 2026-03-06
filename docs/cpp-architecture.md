@@ -64,7 +64,7 @@ Makefile       // ビルド用
 |------|------|------|------|
 | `Resonator` | struct + メソッド | ~35行 | 2次IIR共振器。状態(z1,z2)+係数+process() |
 | `FormantParams` | struct (POD) | ~10行 | F1-F3, BW1-BW3, 振幅, 音源タイプ等 |
-| `PhonemeTable` | constexpr配列 | ~80行 | 28音素のパラメータテーブル |
+| `PhonemeTable` | constexpr配列 | ~80行 | 28-29音素のパラメータテーブル |
 | `Synthesizer` | class | ~150行 | 中核。Resonator×3, 音源, 遷移, フェーズ制御 |
 | `TextToPhoneme` | 関数群 | ~70行 | ひらがなUTF-8→音素列変換 |
 | `WavWriter` | 関数1つ | ~30行 | WAVヘッダ+データ書き出し |
@@ -76,6 +76,7 @@ main()
   ├── TextToPhoneme::convert("こんにちは") -> vector<Phoneme>
   ├── Synthesizer
   │     ├── PhonemeTable (constexpr data)
+  │     │     └── FormantParams (POD struct)
   │     ├── Resonator x3
   │     └── SourceType (enum class)
   └── WavWriter::write("output.wav", samples)
@@ -103,7 +104,7 @@ struct Resonator {
 ```cpp
 class Synthesizer {
 public:
-    void synthesize(const std::vector<PhonemeEntry>& phonemes,
+    void synthesize(const std::vector<FormantParams>& phonemes,
                     std::vector<int16_t>& output);
 private:
     std::array<Resonator, 3> filters_;
@@ -224,6 +225,8 @@ MS1 → MS2 → [refactor] → MS3 → MS4 → [refactor] → MS5 → MS6 → [r
 
 **完了条件**: 「あいうえお」が滑らかに繋がって聞こえる。遷移でクリックなし。
 
+**技術リスク: 低** — MS1の構造を拡張するだけ。
+
 **リファクタリングポイント1**: Resonator/WAV出力のインターフェース確定。
 
 ### MS3: ノイズ音源 + 7子音（累計 ~315行）
@@ -271,6 +274,8 @@ MS1 → MS2 → [refactor] → MS3 → MS4 → [refactor] → MS5 → MS6 → [r
 
 **完了条件**: 五十音表のすべて（46清音+20濁音+5半濁音）が聞き取れる。
 
+**技術リスク: 中高** — 破擦音の破裂→摩擦接続タイミング。
+
 ### MS6: ひらがなテキスト入力（累計 ~558行）
 
 | タスク | 行数 |
@@ -282,6 +287,8 @@ MS1 → MS2 → [refactor] → MS3 → MS4 → [refactor] → MS5 → MS6 → [r
 | main改修（コマンドライン入力） | ~10行 |
 
 **完了条件**: `./formant "こんにちは"` で「こんにちは」と聞こえる。
+
+**技術リスク: 低** — テーブル変換のみ、音声処理に変更なし。
 
 **リファクタリングポイント3**: 全体整理。
 

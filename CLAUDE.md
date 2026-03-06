@@ -36,6 +36,7 @@ afplay output.wav         # macOS で再生
 |------|------|------|
 | `Resonator` | struct | 2次IIR共振器。z1,z2 + set() + process() |
 | `FormantParams` | struct (POD) | F1-F3, BW1-BW3, 振幅, 音源タイプ |
+| `PhonemeTable` | constexpr配列 | 28-29音素のFormantParamsテーブル |
 | `Synthesizer` | class | 中核。Resonator×3, 音源, フォルマント遷移, フェーズ制御 |
 | `TextToPhoneme` | 関数群 | ひらがなUTF-8 → 音素列変換 |
 | `WavWriter` | 関数 | WAVヘッダ+データ書き出し |
@@ -46,8 +47,8 @@ afplay output.wav         # macOS で再生
 
 | 音源 | 用途 | 実装 |
 |------|------|------|
-| インパルス列 | 母音、鼻音、半母音、弾き音 | 周期 = fs/f0 ごとにパルス |
-| 白色雑音 | 無声摩擦音、破裂バースト | 線形合同法で [-1,+1] |
+| インパルス列 | 母音、鼻音、半母音、弾き音、有声破裂音のvoice bar | 周期 = fs/f0 ごとにパルス |
+| 白色雑音 | 無声摩擦音、破裂バースト、気息(VOT区間) | 線形合同法で [-1,+1] |
 | 混合 | 有声摩擦音 /z, ʑ/ | インパルス + ノイズ加算 |
 
 ### 2次IIR共振器の係数計算
@@ -104,4 +105,4 @@ y  = a0*x - b1*z1 - b2*z2
 - C++設計・マイルストーン詳細: `docs/cpp-architecture.md`
 - 基本パラメータ: サンプルレート 44100Hz, 基本周波数 160Hz, 振幅 0.9 * 32767
 - 参考実装: eSpeak NG `klatt.c`（~820行、C言語）
-- 文献: Klatt (1980) "Software for a cascade/parallel formant synthesizer" JASA 67(3)
+- 文献: Klatt (1980) "Software for a cascade/parallel formant synthesizer" JASA 67(3); Stevens (1998) *Acoustic Phonetics*
