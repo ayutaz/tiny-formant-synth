@@ -42,14 +42,14 @@ Makefile       // ビルド用
 
 ファイル内の論理的区切りをコメントで明示:
 ```cpp
-// ============ Constants & Types ============
-// ============ Resonator ============
-// ============ Phoneme Data ============
-// ============ Source Generation ============
-// ============ Synthesizer ============
-// ============ Text to Phoneme ============
-// ============ WAV Writer ============
-// ============ Main ============
+// ============ Constants & Types ============   // ✅ 実装済
+// ============ Resonator ============           // ✅ 実装済
+// ============ Phoneme Data ============        // ✅ 実装済
+// ============ Source Generation ============   // ✅ 実装済
+// ============ Synthesizer ============         // 🔲 未実装（main内に直接記述）
+// ============ Text to Phoneme ============     // 🔲 未実装
+// ============ WAV Writer ============          // ✅ 実装済
+// ============ Main ============                // ✅ 実装済
 ```
 
 ---
@@ -60,17 +60,34 @@ Makefile       // ビルド用
 
 ### クラス/構造体一覧
 
-| 名前 | 種別 | 行数 | 役割 |
-|------|------|------|------|
-| `Resonator` | struct + メソッド | ~35行 | 2次IIR共振器。状態(z1,z2)+係数+process() |
-| `FormantParams` | struct (POD) | ~10行 | F1-F3, BW1-BW3, 振幅, 音源タイプ等 |
-| `PhonemeTable` | constexpr配列 | ~80行 | 28-29音素のパラメータテーブル |
-| `Synthesizer` | class | ~150行 | 中核。Resonator×3, 音源, 遷移, フェーズ制御 |
-| `TextToPhoneme` | 関数群 | ~70行 | ひらがなUTF-8→音素列変換 |
-| `WavWriter` | 関数1つ | ~30行 | WAVヘッダ+データ書き出し |
+| 名前 | 種別 | 行数 | 状態 | 役割 |
+|------|------|------|------|------|
+| `SourceType` | enum class | 1行 | ✅ 実装済 | 音源種別（`Impulse` / `Noise`） |
+| `FormantParams` | struct (POD) | ~7行 | ✅ 実装済 | F1-F3, BW1-BW3, `gain`, `source`（SourceType） |
+| `Resonator` | struct + メソッド | ~20行 | ✅ 実装済 | 2次IIR共振器。状態(z1,z2)+係数+set()/process()/reset() |
+| `PhonemeEntry` | struct (POD) | ~4行 | ✅ 実装済 | FormantParams + duration_samples のペア |
+| `NoiseGen` | struct + メソッド | ~7行 | ✅ 実装済 | LCGベースの白色雑音生成器（seed + next()） |
+| `ImpulseTrain` | struct + メソッド | ~10行 | ✅ 実装済 | 位相累算方式のインパルス列音源（phase + next()） |
+| `PhonemeTable` | constexpr配列 | ~80行 | 🔲 未実装 | 28-29音素のパラメータテーブル（現在は個別constexpr変数） |
+| `Synthesizer` | class | ~150行 | 🔲 未実装 | 中核クラス（現在はmain内に直接ループとして実装） |
+| `TextToPhoneme` | 関数群 | ~70行 | 🔲 未実装 | ひらがなUTF-8→音素列変換 |
+| `WavWriter` | 関数1つ | ~40行 | ✅ 実装済 | WAVヘッダ+データ書き出し（`writeWav` 自由関数） |
 
 ### 依存関係（一方向の木構造）
 
+**現在の実装（MS3時点）:**
+```
+main()
+  ├── PhonemeEntry の vector（音素列を直接構築）
+  │     └── FormantParams (POD struct)
+  │           └── SourceType (enum class)
+  ├── Resonator x3
+  ├── ImpulseTrain（インパルス列音源）
+  ├── NoiseGen（LCGノイズ音源）
+  └── writeWav("output.wav", samples)
+```
+
+**将来の設計目標（MS6完了時）:**
 ```
 main()
   ├── TextToPhoneme::convert("こんにちは") -> vector<Phoneme>
@@ -78,28 +95,44 @@ main()
   │     ├── PhonemeTable (constexpr data)
   │     │     └── FormantParams (POD struct)
   │     ├── Resonator x3
+  │     ├── ImpulseTrain
+  │     ├── NoiseGen
   │     └── SourceType (enum class)
   └── WavWriter::write("output.wav", samples)
 ```
 
-### Resonator（参考動画の BiquadFilter に相当）
+### Resonator（参考動画の BiquadFilter に相当） ✅ 実装済
 
 ```cpp
 struct Resonator {
     double z1 = 0, z2 = 0;
-    double a0, b1, b2;
+    double a0 = 0, b1 = 0, b2 = 0;
 
-    void set(double freq, double bw, double fs);
-    double process(double input);
+    void set(double freq, double bw, double fs) {
+        double R = std::exp(-kPi * bw / fs);
+        b1 = -2.0 * R * std::cos(2.0 * kPi * freq / fs);
+        b2 = R * R;
+        a0 = 1.0 + b1 + b2;
+    }
+
+    double process(double input) {
+        double y = a0 * input - b1 * z1 - b2 * z2;
+        z2 = z1;
+        z1 = y;
+        return y;
+    }
+
     void reset() { z1 = z2 = 0; }
 };
 ```
 
 - 参考動画の `setParam`/`filter` と同等
-- コンストラクタで `z1=z2=0` を保証（元コードの改善点）
+- メンバ初期化で `z1=z2=0`, `a0=b1=b2=0` を保証
 - 反共振器は `antiresonator()` として別メソッドまたは別関数で追加可能
 
-### Synthesizer（中核クラス）
+### Synthesizer（中核クラス） — 🔲 未実装（将来のリファクタリング対象）
+
+> **現状との差異**: MS3時点では `Synthesizer` クラスは導入されておらず、合成ループは `main()` 内に直接記述されている。`Resonator x3`、`ImpulseTrain`、`NoiseGen` を `main()` のローカル変数として保持し、`PhonemeEntry` の `vector` を順に処理する構造。以下のクラス設計は、MS4以降のリファクタリングで導入予定。
 
 ```cpp
 class Synthesizer {
@@ -108,8 +141,8 @@ public:
                     std::vector<int16_t>& output);
 private:
     std::array<Resonator, 3> filters_;
-    double phase_ = 0;          // 音源の位相カウンタ
-    uint32_t noise_seed_;       // ノイズ生成用シード
+    ImpulseTrain impulse_;      // インパルス列音源
+    NoiseGen noise_;            // LCGノイズ音源
 
     double generateSource(SourceType type, double f0, double fs);
     void updateFormants(const FormantParams& target, double fs);
@@ -202,7 +235,7 @@ make && ./formant "あいうえお" && afplay output.wav
 MS1 → MS2 → [refactor] → MS3 → MS4 → [refactor] → MS5 → MS6 → [refactor] → MS7(任意)
 ```
 
-### MS1: パイプライン骨格 — 「あ」が出る（~145行）
+### MS1: パイプライン骨格 — 「あ」が出る（~145行） ✅ 完了
 
 | タスク | 行数 |
 |--------|------|
@@ -217,7 +250,7 @@ MS1 → MS2 → [refactor] → MS3 → MS4 → [refactor] → MS5 → MS6 → [r
 
 **技術リスク: 中** — IIR係数の計算ミスで発振する危険。
 
-### MS2: 5母音 + フォルマント遷移（累計 ~215行）
+### MS2: 5母音 + フォルマント遷移（累計 ~215行） ✅ 完了
 
 | タスク | 行数 |
 |--------|------|
@@ -232,7 +265,7 @@ MS1 → MS2 → [refactor] → MS3 → MS4 → [refactor] → MS5 → MS6 → [r
 
 **リファクタリングポイント1**: Resonator/WAV出力のインターフェース確定。
 
-### MS3: ノイズ音源 + 7子音（累計 ~315行）
+### MS3: ノイズ音源 + 7子音（累計 ~315行） ✅ 完了（実装262行）
 
 | タスク | 行数 |
 |--------|------|

@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 C++20によるフォルマント音声合成器。日本語の全音素（母音・子音・濁音・半濁音・拗音・促音・撥音）を合成し、WAVファイルとして出力する。最終目標は約500行のコンパクトな単一ファイル実装。
 
+**現在の進捗**: MS1-MS3 完了（formant.cpp ~262行）。5母音 + 7子音 /h,s,n,m,ɾ,j,w/ を合成可能。
+
 ## Build & Run
 
 ```bash
@@ -15,8 +17,8 @@ clang++ -std=c++20 -O2 -Wall -o formant formant.cpp
 # または Makefile
 make
 
-# 実行・再生
-./formant "こんにちは"    # output.wav を生成
+# 実行・再生（現在は固定シーケンス: は さ な ま ら や わ + あいうえお）
+./formant                 # output.wav を生成
 afplay output.wav         # macOS で再生
 ```
 
@@ -32,14 +34,17 @@ afplay output.wav         # macOS で再生
 
 ### クラス設計（データ指向 + 薄いクラス）
 
-| 名前 | 種別 | 役割 |
-|------|------|------|
-| `Resonator` | struct | 2次IIR共振器。z1,z2 + set() + process() |
-| `FormantParams` | struct (POD) | F1-F3, BW1-BW3, 振幅, 音源タイプ |
-| `PhonemeTable` | constexpr配列 | 28-29音素のFormantParamsテーブル |
-| `Synthesizer` | class | 中核。Resonator×3, 音源, フォルマント遷移, フェーズ制御 |
-| `TextToPhoneme` | 関数群 | ひらがなUTF-8 → 音素列変換 |
-| `WavWriter` | 関数 | WAVヘッダ+データ書き出し |
+| 名前 | 種別 | 状態 | 役割 |
+|------|------|------|------|
+| `SourceType` | enum class | 実装済 | 音源種別: `Impulse`, `Noise` |
+| `FormantParams` | struct (POD) | 実装済 | F1-F3, BW1-BW3, gain, source |
+| `Resonator` | struct | 実装済 | 2次IIR共振器。z1,z2 + set() + process() + reset() |
+| `NoiseGen` | struct | 実装済 | LCG乱数による白色雑音生成 |
+| `ImpulseTrain` | struct | 実装済 | 位相累積型インパルス列生成 |
+| `PhonemeEntry` | struct | 実装済 | FormantParams + duration_samples のペア |
+| `writeWav` | 関数 | 実装済 | WAVヘッダ+データ書き出し（16bit/mono） |
+| `Synthesizer` | class | 未実装(MS4+) | 中核クラスへのリファクタリング予定 |
+| `TextToPhoneme` | 関数群 | 未実装(MS6) | ひらがなUTF-8 → 音素列変換 |
 
 設計原則: 継承なし、仮想関数なし、`enum class` + switch で分岐。
 
@@ -86,15 +91,15 @@ y  = a0*x - b1*z1 - b2*z2
 
 ## Milestones
 
-| MS | 内容 | 累計行数 | リスク |
-|----|------|---------|--------|
-| 1 | パイプライン骨格 — 「あ」が出る | ~145行 | 中 |
-| 2 | 5母音 + フォルマント遷移 | ~215行 | 低 |
-| 3 | ノイズ音源 + 7子音 /h,s,n,m,r,j,w/ | ~315行 | 中 |
-| 4 | 破裂音 /p,b,t,d,k,g/ + 促音 + 撥音 | ~405行 | ★最高 |
-| 5 | 破擦音 + 残り摩擦音 → 全音素完成 | ~473行 | 中高 |
-| 6 | ひらがなテキスト入力対応 | ~558行 | 低 |
-| 7 | （任意）ピッチ制御 + 品質改善 | ~628行 | — |
+| MS | 内容 | 累計行数 | リスク | 状態 |
+|----|------|---------|--------|------|
+| 1 | パイプライン骨格 — 「あ」が出る | ~145行 | 中 | 完了 |
+| 2 | 5母音 + フォルマント遷移 | ~215行 | 低 | 完了 |
+| 3 | ノイズ音源 + 7子音 /h,s,n,m,ɾ,j,w/ | ~262行 | 中 | 完了 |
+| 4 | 破裂音 /p,b,t,d,k,g/ + 促音 + 撥音 | ~405行 | ★最高 | |
+| 5 | 破擦音 + 残り摩擦音 → 全音素完成 | ~473行 | 中高 | |
+| 6 | ひらがなテキスト入力対応 | ~558行 | 低 | |
+| 7 | （任意）ピッチ制御 + 品質改善 | ~628行 | — | |
 
 リファクタリングポイント: MS2後、MS4後、MS6後。
 
