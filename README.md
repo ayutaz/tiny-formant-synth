@@ -6,7 +6,7 @@ C++20で書かれたコンパクトなフォルマント音声合成器。日本
 
 ## 特徴
 
-- 単一ファイル実装（`formant.cpp`、約260行）
+- 単一ファイル実装（`formant.cpp`、約362行）
 - 外部ライブラリ依存なし（標準ライブラリのみ）
 - Klatt簡易モデル（インパルス列/ノイズ音源 → 2次IIR共振器×3段カスケード）
 - 16bit PCM WAV出力（44100Hz, mono）
@@ -17,6 +17,7 @@ C++20で書かれたコンパクトなフォルマント音声合成器。日本
 make
 ./formant
 afplay output.wav    # macOS
+make test            # テスト実行（10スイート / 67ケース）
 ```
 
 ## 動作原理
@@ -40,6 +41,23 @@ afplay output.wav    # macOS
 | 破裂音 | /p/、/b/、/t/、/d/、/k/、/g/ |
 | 促音 | っ |
 | 撥音 | ん |
+
+## テスト
+
+`make test` で全10スイート / 67テストケースを実行。外部依存なしの軽量テストフレームワーク。
+
+| スイート | 対象 | ケース数 |
+|---------|------|---------|
+| Resonator | 2次IIR共振器 | 5 |
+| NoiseGen | LCG乱数生成 | 5 |
+| ImpulseTrain | インパルス列 | 5 |
+| Lerp | FormantParams線形補間 | 6 |
+| Helpers | ms2s / append / makePlosiveCV | 10 |
+| PhonemeData | 音素定数値 | 13 |
+| SynthBasic | 合成器基本動作 | 6 |
+| SynthSource | 音源切替・遷移 | 5 |
+| WAVWriter | WAVファイル出力 | 9 |
+| Integration | フルパイプライン | 7 |
 
 ## ロードマップ
 

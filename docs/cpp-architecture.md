@@ -24,11 +24,27 @@ CXX       ?= c++
 CXXFLAGS   = -std=c++20 -O2 -Wall -Wextra
 TARGET     = formant
 
+TESTS = test_resonator test_noisegen test_impulsetrain test_lerp \
+        test_helpers test_phoneme_data test_synth_basic test_synth_source \
+        test_wav test_integration
+TEST_BINS = $(addprefix tests/, $(TESTS))
+
 $(TARGET): formant.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
+tests/%: tests/%.cpp formant.cpp test_framework.h
+	$(CXX) $(CXXFLAGS) -Wno-unused-function -o $@ $<
+
+test: $(TEST_BINS)
+	@failed=0; for t in $(TEST_BINS); do ./$$t || failed=$$((failed+1)); done; \
+	echo ""; \
+	if [ $$failed -eq 0 ]; then echo "ALL TEST SUITES PASSED"; \
+	else echo "$$failed TEST SUITE(S) FAILED"; exit 1; fi
+
 clean:
-	rm -f $(TARGET) *.wav
+	rm -f $(TARGET) $(TEST_BINS) *.wav
+
+.PHONY: clean test
 ```
 
 CMake は 500行規模では過剰。単一ファイルコンパイルで十分。
@@ -36,8 +52,10 @@ CMake は 500行規模では過剰。単一ファイルコンパイルで十分�
 ### ファイル構成: 単一ファイル（~500行）
 
 ```
-formant.cpp    // 全部入り1ファイル
-Makefile       // ビルド用
+formant.cpp    // 全部入り1ファイル (~362行)
+Makefile       // ビルド用（make / make test / make clean）
+test_framework.h  // 軽量テストフレームワーク
+tests/         // テストファイル（10スイート）
 ```
 
 ファイル内の論理的区切りをコメントで明示:
@@ -46,7 +64,7 @@ Makefile       // ビルド用
 // ============ Resonator ============           // ✅ 実装済
 // ============ Phoneme Data ============        // ✅ 実装済
 // ============ Source Generation ============   // ✅ 実装済
-// ============ Synthesizer ============         // 🔲 未実装（main内に直接記述）
+// ============ Synthesizer ============         // ✅ 実装済
 // ============ Text to Phoneme ============     // 🔲 未実装
 // ============ WAV Writer ============          // ✅ 実装済
 // ============ Main ============                // ✅ 実装済
@@ -69,7 +87,7 @@ Makefile       // ビルド用
 | `NoiseGen` | struct + メソッド | ~7行 | ✅ 実装済 | LCGベースの白色雑音生成器（seed + next()） |
 | `ImpulseTrain` | struct + メソッド | ~10行 | ✅ 実装済 | 位相累算方式のインパルス列音源（phase + next()） |
 | `PhonemeTable` | constexpr配列 | ~80行 | 🔲 未実装 | 28-29音素のパラメータテーブル（現在は個別constexpr変数） |
-| `Synthesizer` | class | ~150行 | 🔲 未実装 | 中核クラス（現在はmain内に直接ループとして実装） |
+| `Synthesizer` | class | ~150行 | ✅ 実装済 | 中核クラス（R1で抽出） |
 | `TextToPhoneme` | 関数群 | ~70行 | 🔲 未実装 | ひらがなUTF-8→音素列変換 |
 | `makePlosiveCV` | 関数 | — | ✅ 実装済 | 破裂音CVのPhonemeEntry列を生成 |
 | `ms2s` | inline関数 | — | ✅ 実装済 | ミリ秒→サンプル数変換 |
@@ -78,15 +96,19 @@ Makefile       // ビルド用
 
 ### 依存関係（一方向の木構造）
 
-**現在の実装（MS3時点）:**
+**現在の実装（MS4/R1時点）:**
 ```
 main()
   ├── PhonemeEntry の vector（音素列を直接構築）
   │     └── FormantParams (POD struct)
   │           └── SourceType (enum class)
-  ├── Resonator x3
-  ├── ImpulseTrain（インパルス列音源）
-  ├── NoiseGen（LCGノイズ音源）
+  ├── makePlosiveCV()（破裂音CV音節の生成）
+  ├── append()（シーケンス構築ヘルパー）
+  ├── Synthesizer
+  │     ├── Resonator x3
+  │     ├── ImpulseTrain（インパルス列音源）
+  │     ├── NoiseGen（LCGノイズ音源）
+  │     └── lerp()（フォルマント補間）
   └── writeWav("output.wav", samples)
 ```
 
@@ -133,22 +155,18 @@ struct Resonator {
 - メンバ初期化で `z1=z2=0`, `a0=b1=b2=0` を保証
 - 反共振器は `antiresonator()` として別メソッドまたは別関数で追加可能
 
-### Synthesizer（中核クラス） — 🔲 未実装（将来のリファクタリング対象）
-
-> **現状との差異**: MS3時点では `Synthesizer` クラスは導入されておらず、合成ループは `main()` 内に直接記述されている。`Resonator x3`、`ImpulseTrain`、`NoiseGen` を `main()` のローカル変数として保持し、`PhonemeEntry` の `vector` を順に処理する構造。以下のクラス設計は、MS4以降のリファクタリングで導入予定。
+### Synthesizer（中核クラス） — ✅ 実装済（R1で抽出）
 
 ```cpp
 class Synthesizer {
 public:
-    void synthesize(const std::vector<FormantParams>& phonemes,
+    void synthesize(const std::vector<PhonemeEntry>& sequence,
                     std::vector<int16_t>& output);
 private:
-    std::array<Resonator, 3> filters_;
-    ImpulseTrain impulse_;      // インパルス列音源
-    NoiseGen noise_;            // LCGノイズ音源
-
-    double generateSource(SourceType type, double f0, double fs);
-    void updateFormants(const FormantParams& target, double fs);
+    std::array<Resonator, 3> filters_{};
+    ImpulseTrain impulse_;
+    NoiseGen noise_;
+    double currentGain_ = 1.0;
 };
 ```
 
@@ -226,7 +244,11 @@ make && ./formant "あいうえお" && afplay output.wav
 
 ### テストフレームワーク
 
-500行規模では **不要**。`assert()` で十分。
+`test_framework.h` による軽量テストフレームワーク（外部依存なし）。
+`make test` で10スイート / 67テストケースを一括実行。
+
+各テストは `tests/test_*.cpp` に配置。`#define TEST_BUILD` でformant.cppのmain()を除外し、
+各コンポーネントを個別にテスト可能。
 
 ---
 
@@ -299,7 +321,7 @@ MS1 → MS2 → [refactor] → MS3 → MS4 → [refactor] → MS5 → MS6 → [r
 
 **技術リスク: ★最高★** — VOTの時間配分、軟口蓋音のvelar pinch（後続母音依存）。
 
-**実績**: 実装360行。フェーズ分解方式（closure → burst → aspiration → transition の PhonemeEntry 列を `makePlosiveCV` で生成）により、Synthesizer クラスへの変更なしで破裂音を実現。
+**実績**: 実装362行。フェーズ分解方式（closure → burst → aspiration → transition の PhonemeEntry 列を `makePlosiveCV` で生成）により、Synthesizer クラスへの変更なしで破裂音を実現。
 
 **リファクタリングポイント2**: フェーズ制御・テーブル構造の整理。
 
