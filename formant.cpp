@@ -1,4 +1,4 @@
-// formant.cpp — MS5: Full phoneme set (affricates + remaining fricatives)
+// formant.cpp — MS6: Hiragana text input
 // Build: make  (expects -std=c++20 -O2 -Wall -Wextra)
 
 #include <cstdint>
@@ -9,6 +9,7 @@
 #include <numbers>
 #include <array>
 #include <algorithm>
+#include <string>
 
 // ============ Constants & Types ============
 
@@ -245,6 +246,124 @@ static void append(std::vector<PhonemeEntry>& seq, const std::vector<PhonemeEntr
     seq.insert(seq.end(), entries.begin(), entries.end());
 }
 
+// ============ Text to Phoneme ============
+
+enum CType : int8_t {
+    V = 0,              // vowel only
+    K, G, T, D, P, B,   // plosives
+    CH, TS, DZH, DZ,    // affricates (/tɕ/, /ts/, /dʑ/, /dz/)
+    S, SH,              // voiceless sibilants /s/, /ɕ/
+    HA, HI, HU, HE, HO, // は行 allophones
+    NN, M, R, J, W,     // sonorants
+    Q, HN, SK           // special: sokuon, hatsuon, skip
+};
+
+struct KanaEntry { CType c; int8_t v; };
+
+// 0x3041(ぁ)〜0x3093(ん) = 83エントリ
+static constexpr KanaEntry kKanaTable[83] = {
+    // ぁあぃいぅうぇえぉお (0x3041-0x304A)
+    {V,0},{V,0},{V,1},{V,1},{V,2},{V,2},{V,3},{V,3},{V,4},{V,4},
+    // かがきぎくぐけげこご (0x304B-0x3054)
+    {K,0},{G,0},{K,1},{G,1},{K,2},{G,2},{K,3},{G,3},{K,4},{G,4},
+    // さざしじすずせぜそぞ (0x3055-0x305E)
+    {S,0},{DZ,0},{SH,1},{DZH,1},{S,2},{DZ,2},{S,3},{DZ,3},{S,4},{DZ,4},
+    // たださちぢっつづてでとど (0x305F-0x3069)
+    {T,0},{D,0},{CH,1},{DZH,1},{Q,-1},{TS,2},{DZ,2},{T,3},{D,3},{T,4},{D,4},
+    // なにぬねの (0x306A-0x306E)
+    {NN,0},{NN,1},{NN,2},{NN,3},{NN,4},
+    // はばぱひびぴふぶぷへべぺほぼぽ (0x306F-0x307D)
+    {HA,0},{B,0},{P,0},{HI,1},{B,1},{P,1},{HU,2},{B,2},{P,2},{HE,3},{B,3},{P,3},{HO,4},{B,4},{P,4},
+    // まみむめも (0x307E-0x3082)
+    {M,0},{M,1},{M,2},{M,3},{M,4},
+    // ゃやゅゆょよ (0x3083-0x3088)
+    {SK,-1},{J,0},{SK,-1},{J,2},{SK,-1},{J,4},
+    // らりるれろ (0x3089-0x308D)
+    {R,0},{R,1},{R,2},{R,3},{R,4},
+    // ゎわゐゑをん (0x308E-0x3093)
+    {SK,-1},{W,0},{SK,-1},{SK,-1},{V,4},{HN,-1},
+};
+
+static void emitCV(std::vector<PhonemeEntry>& seq, CType c, int vi) {
+    static const FormantParams* vowels[] = {&kVowelA,&kVowelI,&kVowelU,&kVowelE,&kVowelO};
+    const auto& v = *vowels[vi];
+    constexpr int vMs = 120;
+    switch (c) {
+        case V:   seq.push_back({v, ms2s(vMs)}); break;
+        case K:   append(seq, makePlosiveCV(80,10,30, kSilence,kBurstK_A,kVotK_A, v,vMs)); break;
+        case G:   append(seq, makePlosiveCV(60,5,0, kVoiceBar,kBurstK_A,kVotK_A, v,vMs)); break;
+        case T:   append(seq, makePlosiveCV(70,10,20, kSilence,kBurstT,kVotT_A, v,vMs)); break;
+        case D:   append(seq, makePlosiveCV(50,5,0, kVoiceBar,kBurstT,kVotT_A, v,vMs)); break;
+        case P:   append(seq, makePlosiveCV(70,10,15, kSilence,kBurstP,kVotP_A, v,vMs)); break;
+        case B:   append(seq, makePlosiveCV(50,5,0, kVoiceBar,kBurstP,kVotP_A, v,vMs)); break;
+        case CH:  append(seq, makePlosiveCV(70,5,80, kSilence,kBurstTCh,kFricSh, v,vMs)); break;
+        case TS:  append(seq, makePlosiveCV(70,5,70, kSilence,kBurstTs,kFricS, v,vMs)); break;
+        case DZH: append(seq, makePlosiveCV(40,5,60, kVoiceBar,kBurstTCh,kFricZh, v,vMs)); break;
+        case DZ:  append(seq, makePlosiveCV(40,5,50, kVoiceBar,kBurstTs,kFricZ, v,vMs)); break;
+        case S:   seq.insert(seq.end(), {{kFricS,ms2s(120)},{v,ms2s(vMs)}}); break;
+        case SH:  seq.insert(seq.end(), {{kFricSh,ms2s(120)},{v,ms2s(vMs)}}); break;
+        case HA:  seq.insert(seq.end(), {{kFricH_A,ms2s(80)},{v,ms2s(vMs)}}); break;
+        case HI:  seq.insert(seq.end(), {{kFricChi,ms2s(100)},{v,ms2s(vMs)}}); break;
+        case HU:  seq.insert(seq.end(), {{kFricPhi,ms2s(100)},{v,ms2s(vMs)}}); break;
+        case HE:  seq.insert(seq.end(), {{kFricH_E,ms2s(80)},{v,ms2s(vMs)}}); break;
+        case HO:  seq.insert(seq.end(), {{kFricH_O,ms2s(80)},{v,ms2s(vMs)}}); break;
+        case NN:  seq.insert(seq.end(), {{kNasalN,ms2s(80)},{v,ms2s(vMs)}}); break;
+        case M:   seq.insert(seq.end(), {{kNasalM,ms2s(80)},{v,ms2s(vMs)}}); break;
+        case R:   seq.insert(seq.end(), {{kTapR,ms2s(30)},{v,ms2s(vMs)}}); break;
+        case J:   seq.insert(seq.end(), {{kSemiJ,ms2s(60)},{v,ms2s(vMs)}}); break;
+        case W:   seq.insert(seq.end(), {{kSemiW,ms2s(60)},{v,ms2s(vMs)}}); break;
+        default: break;
+    }
+}
+
+static std::vector<PhonemeEntry> textToPhoneme(const std::string& text) {
+    std::vector<PhonemeEntry> seq;
+    std::size_t pos = 0;
+    int lastVowel = 0;
+
+    while (pos + 3 <= text.size()) {
+        // UTF-8 3バイトデコード
+        auto b0 = static_cast<unsigned char>(text[pos]);
+        auto b1 = static_cast<unsigned char>(text[pos+1]);
+        auto b2 = static_cast<unsigned char>(text[pos+2]);
+        if ((b0 & 0xF0) != 0xE0) { pos++; continue; }
+        int cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
+        pos += 3;
+
+        // 長音マーク ー (U+30FC)
+        if (cp == 0x30FC) {
+            static const FormantParams* vowels[] = {&kVowelA,&kVowelI,&kVowelU,&kVowelE,&kVowelO};
+            seq.push_back({*vowels[lastVowel], ms2s(120)});
+            continue;
+        }
+
+        // ひらがな範囲チェック
+        if (cp < 0x3041 || cp > 0x3093) continue;
+        auto [c, vi] = kKanaTable[cp - 0x3041];
+
+        if (c == SK) continue;
+        if (c == Q) { seq.push_back({kSilence, kSokuonSamples}); continue; }
+        if (c == HN) { seq.push_back({kNasalN, kHatsuonSamples}); continue; }
+
+        // 拗音チェック: 次がゃ/ゅ/ょなら母音を変更
+        if (vi == 1 && c != V && pos + 3 <= text.size()) {
+            auto nb0 = static_cast<unsigned char>(text[pos]);
+            auto nb1 = static_cast<unsigned char>(text[pos+1]);
+            auto nb2 = static_cast<unsigned char>(text[pos+2]);
+            if ((nb0 & 0xF0) == 0xE0) {
+                int ncp = ((nb0 & 0x0F) << 12) | ((nb1 & 0x3F) << 6) | (nb2 & 0x3F);
+                if      (ncp == 0x3083) { vi = 0; pos += 3; }  // ゃ→a
+                else if (ncp == 0x3085) { vi = 2; pos += 3; }  // ゅ→u
+                else if (ncp == 0x3087) { vi = 4; pos += 3; }  // ょ→o
+            }
+        }
+
+        emitCV(seq, c, vi);
+        if (vi >= 0) lastVowel = vi;
+    }
+    return seq;
+}
+
 // ============ WAV Writer ============
 
 static bool writeWav(const char* filename,
@@ -293,96 +412,14 @@ static bool writeWav(const char* filename,
 // ============ Main ============
 
 #ifndef TEST_BUILD
-int main() {
-    constexpr int kPause     = 882;    // 20 ms
-    constexpr int kLongPause = 13230;  // 300 ms
+int main(int argc, char* argv[]) {
+    std::string input = (argc > 1) ? argv[1] : "あいうえお";
+    auto sequence = textToPhoneme(input);
 
-    std::vector<PhonemeEntry> sequence;
-
-    // --- テスト1: か た ぱ（無声破裂音 /k,t,p/）---
-    append(sequence, makePlosiveCV(80, 10, 30, kSilence, kBurstK_A, kVotK_A, kVowelA, 120));
-    sequence.push_back({kSilence, kPause});
-    append(sequence, makePlosiveCV(70, 10, 20, kSilence, kBurstT, kVotT_A, kVowelA, 120));
-    sequence.push_back({kSilence, kPause});
-    append(sequence, makePlosiveCV(70, 10, 15, kSilence, kBurstP, kVotP_A, kVowelA, 120));
-    sequence.push_back({kSilence, kLongPause});
-
-    // --- テスト2: が だ ば（有声破裂音 /g,d,b/）---
-    append(sequence, makePlosiveCV(60, 5, 0, kVoiceBar, kBurstK_A, kVotK_A, kVowelA, 120));
-    sequence.push_back({kSilence, kPause});
-    append(sequence, makePlosiveCV(50, 5, 0, kVoiceBar, kBurstT, kVotT_A, kVowelA, 120));
-    sequence.push_back({kSilence, kPause});
-    append(sequence, makePlosiveCV(50, 5, 0, kVoiceBar, kBurstP, kVotP_A, kVowelA, 120));
-    sequence.push_back({kSilence, kLongPause});
-
-    // --- テスト3: ち つ（無声破擦音 /tɕ,ts/）---
-    append(sequence, makePlosiveCV(70, 5, 80, kSilence, kBurstTCh, kFricSh, kVowelI, 120));
-    sequence.push_back({kSilence, kPause});
-    append(sequence, makePlosiveCV(70, 5, 70, kSilence, kBurstTs, kFricS, kVowelU, 120));
-    sequence.push_back({kSilence, kLongPause});
-
-    // --- テスト4: ざ じ ず ぜ ぞ（有声破擦音/摩擦音）---
-    // ざ [dza]
-    append(sequence, makePlosiveCV(40, 5, 50, kVoiceBar, kBurstTs, kFricZ, kVowelA, 120));
-    sequence.push_back({kSilence, kPause});
-    // じ [dʑi]
-    append(sequence, makePlosiveCV(40, 5, 60, kVoiceBar, kBurstTCh, kFricZh, kVowelI, 120));
-    sequence.push_back({kSilence, kPause});
-    // ず [dzɯ]
-    append(sequence, makePlosiveCV(40, 5, 50, kVoiceBar, kBurstTs, kFricZ, kVowelU, 120));
-    sequence.push_back({kSilence, kPause});
-    // ぜ [dze]
-    append(sequence, makePlosiveCV(40, 5, 50, kVoiceBar, kBurstTs, kFricZ, kVowelE, 120));
-    sequence.push_back({kSilence, kPause});
-    // ぞ [dzo]
-    append(sequence, makePlosiveCV(40, 5, 50, kVoiceBar, kBurstTs, kFricZ, kVowelO, 120));
-    sequence.push_back({kSilence, kLongPause});
-
-    // --- テスト5: し す せ そ（さ行 — し=/ɕ/、他=/s/）---
-    sequence.insert(sequence.end(), {
-        {kFricSh, ms2s(120)}, {kVowelI, ms2s(120)}, {kSilence, kPause},
-        {kFricS,  ms2s(120)}, {kVowelU, ms2s(120)}, {kSilence, kPause},
-        {kFricS,  ms2s(120)}, {kVowelE, ms2s(120)}, {kSilence, kPause},
-        {kFricS,  ms2s(120)}, {kVowelO, ms2s(120)}, {kSilence, kLongPause},
-    });
-
-    // --- テスト6: は ひ ふ へ ほ（は行 — 条件異音）---
-    sequence.insert(sequence.end(), {
-        {kFricH_A,  ms2s(80)}, {kVowelA, ms2s(120)}, {kSilence, kPause},
-        {kFricChi,  ms2s(100)}, {kVowelI, ms2s(120)}, {kSilence, kPause},
-        {kFricPhi,  ms2s(100)}, {kVowelU, ms2s(120)}, {kSilence, kPause},
-        {kFricH_E,  ms2s(80)}, {kVowelE, ms2s(120)}, {kSilence, kPause},
-        {kFricH_O,  ms2s(80)}, {kVowelO, ms2s(120)}, {kSilence, kLongPause},
-    });
-
-    // --- テスト7: かっぱ（促音テスト）---
-    append(sequence, makePlosiveCV(80, 10, 30, kSilence, kBurstK_A, kVotK_A, kVowelA, 100));
-    sequence.push_back({kSilence, kSokuonSamples});
-    append(sequence, makePlosiveCV(70, 10, 15, kSilence, kBurstP, kVotP_A, kVowelA, 120));
-    sequence.push_back({kSilence, kLongPause});
-
-    // --- テスト8: かんな（撥音テスト）---
-    append(sequence, makePlosiveCV(80, 10, 30, kSilence, kBurstK_A, kVotK_A, kVowelA, 100));
-    sequence.push_back({kNasalN, kHatsuonSamples});
-    sequence.push_back({kNasalN, ms2s(80)});
-    sequence.push_back({kVowelA, ms2s(120)});
-    sequence.push_back({kSilence, kLongPause});
-
-    // --- テスト9: は さ な ま ら や わ + あいうえお ---
-    sequence.insert(sequence.end(), {
-        {kFricH_A, ms2s(80)},  {kVowelA, ms2s(120)}, {kSilence, kPause},
-        {kFricS,   ms2s(120)}, {kVowelA, ms2s(120)}, {kSilence, kPause},
-        {kNasalN,  ms2s(80)},  {kVowelA, ms2s(120)}, {kSilence, kPause},
-        {kNasalM,  ms2s(80)},  {kVowelA, ms2s(120)}, {kSilence, kPause},
-        {kTapR,    ms2s(30)},  {kVowelA, ms2s(120)}, {kSilence, kPause},
-        {kSemiJ,   ms2s(60)},  {kVowelA, ms2s(120)}, {kSilence, kPause},
-        {kSemiW,   ms2s(60)},  {kVowelA, ms2s(120)}, {kSilence, kPause},
-        {kVowelA, ms2s(120)},
-        {kVowelI, ms2s(120)},
-        {kVowelU, ms2s(120)},
-        {kVowelE, ms2s(120)},
-        {kVowelO, ms2s(120)},
-    });
+    if (sequence.empty()) {
+        std::cerr << "Usage: " << argv[0] << " <hiragana text>\n";
+        return 1;
+    }
 
     Synthesizer synth;
     std::vector<int16_t> buf;
@@ -393,7 +430,7 @@ int main() {
     }
 
     std::cout << "Wrote output.wav (" << buf.size() << " samples, "
-              << sequence.size() << " segments: MS5 full phoneme test)\n";
+              << sequence.size() << " segments)\n";
     return 0;
 }
 #endif // TEST_BUILD

@@ -6,7 +6,8 @@ TESTS = test_resonator test_noisegen test_impulsetrain test_lerp \
         test_helpers test_phoneme_data test_synth_basic test_synth_source \
         test_wav test_integration \
         test_mixed_source test_new_fricatives test_affricates \
-        test_ha_row test_sa_row test_za_row
+        test_ha_row test_sa_row test_za_row \
+        test_text_to_phoneme test_youon_special test_integration_ms6
 TEST_BINS = $(addprefix tests/, $(TESTS))
 
 $(TARGET): formant.cpp
