@@ -28,7 +28,8 @@ TESTS = test_resonator test_noisegen test_impulsetrain test_lerp \
         test_helpers test_phoneme_data test_synth_basic test_synth_source \
         test_wav test_integration \
         test_mixed_source test_new_fricatives test_affricates \
-        test_ha_row test_sa_row test_za_row
+        test_ha_row test_sa_row test_za_row \
+        test_text_to_phoneme test_youon_special test_integration_ms6
 TEST_BINS = $(addprefix tests/, $(TESTS))
 
 $(TARGET): formant.cpp
@@ -54,10 +55,10 @@ CMake は 500行規模では過剰。単一ファイルコンパイルで十分�
 ### ファイル構成: 単一ファイル（~500行）
 
 ```
-formant.cpp    // 全部入り1ファイル (~399行)
+formant.cpp    // 全部入り1ファイル (~437行)
 Makefile       // ビルド用（make / make test / make clean）
 test_framework.h  // 軽量テストフレームワーク
-tests/         // テストファイル（16スイート）
+tests/         // テストファイル（19スイート）
 ```
 
 ファイル内の論理的区切りをコメントで明示:
@@ -67,7 +68,7 @@ tests/         // テストファイル（16スイート）
 // ============ Phoneme Data ============        // ✅ 実装済
 // ============ Source Generation ============   // ✅ 実装済
 // ============ Synthesizer ============         // ✅ 実装済
-// ============ Text to Phoneme ============     // 🔲 未実装
+// ============ Text to Phoneme ============     // ✅ 実装済
 // ============ WAV Writer ============          // ✅ 実装済
 // ============ Main ============                // ✅ 実装済
 ```
@@ -88,9 +89,12 @@ tests/         // テストファイル（16スイート）
 | `PhonemeEntry` | struct (POD) | ~4行 | ✅ 実装済 | FormantParams + duration_samples のペア |
 | `NoiseGen` | struct + メソッド | ~7行 | ✅ 実装済 | LCGベースの白色雑音生成器（seed + next()） |
 | `ImpulseTrain` | struct + メソッド | ~10行 | ✅ 実装済 | 位相累算方式のインパルス列音源（phase + next()） |
-| `PhonemeTable` | constexpr配列 | ~80行 | 🔲 未実装 | 28-29音素のパラメータテーブル（現在は個別constexpr変数） |
+| `PhonemeTable` | constexpr配列 | ~80行 | ✅ 実装済 | 28-29音素のパラメータテーブル（個別constexpr変数として実装） |
 | `Synthesizer` | class | ~150行 | ✅ 実装済 | 中核クラス（R1で抽出） |
-| `TextToPhoneme` | 関数群 | ~70行 | 🔲 未実装 | ひらがなUTF-8→音素列変換 |
+| `CType` | enum | 1行 | ✅ 実装済 | 子音種別（26種） |
+| `KanaEntry` | struct | ~25行 | ✅ 実装済 | CType+母音インデックス、83エントリテーブル |
+| `emitCV` | 関数 | ~30行 | ✅ 実装済 | CType→PhonemeEntry列の生成 |
+| `textToPhoneme` | 関数 | ~50行 | ✅ 実装済 | ひらがなUTF-8→音素列変換（拗音・促音・撥音・長音） |
 | `makePlosiveCV` | 関数 | — | ✅ 実装済 | 破裂音CVのPhonemeEntry列を生成 |
 | `ms2s` | inline関数 | — | ✅ 実装済 | ミリ秒→サンプル数変換 |
 | `lerp` | 関数 | — | ✅ 実装済 | FormantParams間の線形補間 |
@@ -98,34 +102,21 @@ tests/         // テストファイル（16スイート）
 
 ### 依存関係（一方向の木構造）
 
-**現在の実装（MS5時点）:**
+**現在の実装（MS6完了時点）:**
 ```
-main()
-  ├── PhonemeEntry の vector（音素列を直接構築）
-  │     └── FormantParams (POD struct)
-  │           └── SourceType (enum class)
-  ├── makePlosiveCV()（破裂音CV音節の生成）
-  ├── append()（シーケンス構築ヘルパー）
+main(argv[1] = "こんにちは")
+  ├── textToPhoneme(input) -> vector<PhonemeEntry>
+  │     ├── KanaEntry[83] テーブル（CType + 母音index）
+  │     ├── emitCV()（CType→PhonemeEntry列の生成）
+  │     │     ├── makePlosiveCV()（破裂音・破擦音）
+  │     │     └── FormantParams constexpr定数群
+  │     └── 拗音ルックアヘッド / 促音・撥音・長音処理
   ├── Synthesizer
   │     ├── Resonator x3
   │     ├── ImpulseTrain（インパルス列音源）
   │     ├── NoiseGen（LCGノイズ音源）
   │     └── lerp()（フォルマント補間）
   └── writeWav("output.wav", samples)
-```
-
-**将来の設計目標（MS6完了時）:**
-```
-main()
-  ├── TextToPhoneme::convert("こんにちは") -> vector<Phoneme>
-  ├── Synthesizer
-  │     ├── PhonemeTable (constexpr data)
-  │     │     └── FormantParams (POD struct)
-  │     ├── Resonator x3
-  │     ├── ImpulseTrain
-  │     ├── NoiseGen
-  │     └── SourceType (enum class)
-  └── WavWriter::write("output.wav", samples)
 ```
 
 ### Resonator（参考動画の BiquadFilter に相当） ✅ 実装済
@@ -247,7 +238,7 @@ make && ./formant "あいうえお" && afplay output.wav
 ### テストフレームワーク
 
 `test_framework.h` による軽量テストフレームワーク（外部依存なし）。
-`make test` で16スイート / 119テストケースを一括実行。
+`make test` で19スイート / 176テストケースを一括実行。
 
 各テストは `tests/test_*.cpp` に配置。`#define TEST_BUILD` でformant.cppのmain()を除外し、
 各コンポーネントを個別にテスト可能。
@@ -343,19 +334,22 @@ MS1 → MS2 → [refactor] → MS3 → MS4 → [refactor] → MS5 → MS6 → [r
 
 **実績**: 実装399行。SourceType::Mixedを追加し有声摩擦音を実現。makePlosiveCVを破擦音にも再利用し、新関数なしで全音素を達成。テスト16スイート/119ケース。
 
-### MS6: ひらがなテキスト入力（累計 ~558行）
+### MS6: ひらがなテキスト入力（累計 ~437行） ✅ 完了
 
 | タスク | 行数 |
 |--------|------|
 | UTF-8→コードポイント変換 | ~15行 |
-| ひらがな→音素マッピングテーブル（71仮名） | ~35行 |
+| ひらがな→音素マッピングテーブル（83エントリ） | ~25行 |
+| CType enum + emitCV関数 | ~30行 |
 | 拗音の先読み処理 | ~15行 |
 | 促音・撥音・長音の特殊処理 | ~10行 |
-| main改修（コマンドライン入力） | ~10行 |
+| main改修（コマンドライン入力） | ~20行 |
 
 **完了条件**: `./formant "こんにちは"` で「こんにちは」と聞こえる。
 
 **技術リスク: 低** — テーブル変換のみ、音声処理に変更なし。
+
+**実績**: 実装437行（見積もり558行よりコンパクト）。テーブル駆動方式でKanaEntry[83]が条件異音を事前解決。拗音はルックアヘッドで処理。テスト19スイート/176ケース。
 
 **リファクタリングポイント3**: 全体整理。
 

@@ -159,6 +159,8 @@ constexpr FormantParams kVowelU = {350, 1300, 2500, 80, 100, 120};
 constexpr FormantParams kVowelE = {500, 1900, 2600, 80, 100, 120};
 constexpr FormantParams kVowelO = {500,  800, 2400, 80, 100, 120};
 
+static const FormantParams* const kVowels[] = {&kVowelA, &kVowelI, &kVowelU, &kVowelE, &kVowelO};
+
 // 半母音（音源:インパルス、遷移のみで実現）
 constexpr FormantParams kSemiJ = {280, 2300, 3000, 80, 100, 120, 1.0, SourceType::Impulse};
 constexpr FormantParams kSemiW = {320, 750,  2300, 80, 100, 120, 1.0, SourceType::Impulse};
@@ -205,6 +207,7 @@ constexpr FormantParams kBurstTCh = {300, 3800, 6000, 500, 2000, 2000, 0.35, Sou
 constexpr FormantParams kBurstTs  = {300, 5500, 7500, 500, 2500, 2000, 0.35, SourceType::Noise};
 
 // VOT/気息パラメータ（後続母音 /a/ 向け — 母音フォルマントベースにBW広・gain小）
+// 現時点では同一値、将来調音点別に分化予定
 constexpr FormantParams kVotP_A = {800, 1200, 2600, 300, 400, 500, 0.10, SourceType::Noise};
 constexpr FormantParams kVotT_A = {800, 1200, 2600, 300, 400, 500, 0.10, SourceType::Noise};
 constexpr FormantParams kVotK_A = {800, 1200, 2600, 300, 400, 500, 0.10, SourceType::Noise};
@@ -285,8 +288,7 @@ static constexpr KanaEntry kKanaTable[83] = {
 };
 
 static void emitCV(std::vector<PhonemeEntry>& seq, CType c, int vi) {
-    static const FormantParams* vowels[] = {&kVowelA,&kVowelI,&kVowelU,&kVowelE,&kVowelO};
-    const auto& v = *vowels[vi];
+    const auto& v = *kVowels[vi];
     constexpr int vMs = 120;
     switch (c) {
         case V:   seq.push_back({v, ms2s(vMs)}); break;
@@ -317,23 +319,26 @@ static void emitCV(std::vector<PhonemeEntry>& seq, CType c, int vi) {
 }
 
 static std::vector<PhonemeEntry> textToPhoneme(const std::string& text) {
+    auto decode3 = [](const std::string& s, std::size_t i) -> int {
+        auto b0 = static_cast<unsigned char>(s[i]);
+        auto b1 = static_cast<unsigned char>(s[i+1]);
+        auto b2 = static_cast<unsigned char>(s[i+2]);
+        if ((b0 & 0xF0) != 0xE0) return -1;
+        return ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
+    };
+
     std::vector<PhonemeEntry> seq;
     std::size_t pos = 0;
     int lastVowel = 0;
 
     while (pos + 3 <= text.size()) {
-        // UTF-8 3バイトデコード
-        auto b0 = static_cast<unsigned char>(text[pos]);
-        auto b1 = static_cast<unsigned char>(text[pos+1]);
-        auto b2 = static_cast<unsigned char>(text[pos+2]);
-        if ((b0 & 0xF0) != 0xE0) { pos++; continue; }
-        int cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
+        int cp = decode3(text, pos);
+        if (cp < 0) { pos++; continue; }
         pos += 3;
 
         // 長音マーク ー (U+30FC)
         if (cp == 0x30FC) {
-            static const FormantParams* vowels[] = {&kVowelA,&kVowelI,&kVowelU,&kVowelE,&kVowelO};
-            seq.push_back({*vowels[lastVowel], ms2s(120)});
+            seq.push_back({*kVowels[lastVowel], ms2s(120)});
             continue;
         }
 
@@ -347,11 +352,8 @@ static std::vector<PhonemeEntry> textToPhoneme(const std::string& text) {
 
         // 拗音チェック: 次がゃ/ゅ/ょなら母音を変更
         if (vi == 1 && c != V && pos + 3 <= text.size()) {
-            auto nb0 = static_cast<unsigned char>(text[pos]);
-            auto nb1 = static_cast<unsigned char>(text[pos+1]);
-            auto nb2 = static_cast<unsigned char>(text[pos+2]);
-            if ((nb0 & 0xF0) == 0xE0) {
-                int ncp = ((nb0 & 0x0F) << 12) | ((nb1 & 0x3F) << 6) | (nb2 & 0x3F);
+            int ncp = decode3(text, pos);
+            if (ncp >= 0) {
                 if      (ncp == 0x3083) { vi = 0; pos += 3; }  // ゃ→a
                 else if (ncp == 0x3085) { vi = 2; pos += 3; }  // ゅ→u
                 else if (ncp == 0x3087) { vi = 4; pos += 3; }  // ょ→o
