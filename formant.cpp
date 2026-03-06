@@ -1,4 +1,4 @@
-// formant.cpp — MS3: Noise source + 7 consonants (refactored)
+// formant.cpp — MS4: Plosives /p,b,t,d,k,g/ + sokuon + hatsuon
 // Build: make  (expects -std=c++20 -O2 -Wall -Wextra)
 
 #include <cstdint>
@@ -173,6 +173,58 @@ constexpr FormantParams kFricS   = {200, 5500, 7500, 500, 3000, 2000, 0.4, Sourc
 // 無音（gain=0、低周波ダミー値）
 constexpr FormantParams kSilence = {100, 100, 100, 100, 100, 100, 0.0, SourceType::Impulse};
 
+// --- 破裂音パラメータ ---
+
+// 有声破裂音の閉鎖区間: voice bar（F1≈200Hz 低振幅インパルス）
+constexpr FormantParams kVoiceBar = {200, 200, 200, 100, 200, 300, 0.08, SourceType::Impulse};
+
+// バーストパラメータ（短いノイズ）
+constexpr FormantParams kBurstP   = {300, 1000, 2300, 500, 1500, 2000, 0.30, SourceType::Noise};
+constexpr FormantParams kBurstT   = {300, 4000, 5000, 500, 2000, 2000, 0.35, SourceType::Noise};
+constexpr FormantParams kBurstK_A = {300, 1800, 2600, 500, 2000, 2000, 0.30, SourceType::Noise};
+
+// VOT/気息パラメータ（後続母音 /a/ 向け — 母音フォルマントベースにBW広・gain小）
+constexpr FormantParams kVotP_A = {800, 1200, 2600, 300, 400, 500, 0.10, SourceType::Noise};
+constexpr FormantParams kVotT_A = {800, 1200, 2600, 300, 400, 500, 0.10, SourceType::Noise};
+constexpr FormantParams kVotK_A = {800, 1200, 2600, 300, 400, 500, 0.10, SourceType::Noise};
+
+// 促音: 120ms の無音区間
+constexpr int kSokuonSamples = 5292;  // 120 ms
+
+// 撥音: /n/ を 80ms で使用
+constexpr int kHatsuonSamples = 3528; // 80 ms
+
+// --- ヘルパー関数 ---
+
+// ミリ秒→サンプル数変換
+inline constexpr int ms2s(int ms) {
+    return static_cast<int>(kSampleRate * ms / 1000.0);
+}
+
+// 破裂音CV の PhonemeEntry 列を生成
+static std::vector<PhonemeEntry> makePlosiveCV(
+    int closure_ms,
+    int burst_ms,
+    int vot_ms,
+    const FormantParams& closure_params,
+    const FormantParams& burst_params,
+    const FormantParams& vot_params,
+    const FormantParams& vowel,
+    int vowel_ms)
+{
+    std::vector<PhonemeEntry> result;
+    if (closure_ms > 0) result.push_back({closure_params, ms2s(closure_ms)});
+    if (burst_ms > 0)   result.push_back({burst_params,   ms2s(burst_ms)});
+    if (vot_ms > 0)     result.push_back({vot_params,     ms2s(vot_ms)});
+    result.push_back({vowel, ms2s(vowel_ms)});
+    return result;
+}
+
+// シーケンスに複数エントリを追加
+static void append(std::vector<PhonemeEntry>& seq, const std::vector<PhonemeEntry>& entries) {
+    seq.insert(seq.end(), entries.begin(), entries.end());
+}
+
 // ============ WAV Writer ============
 
 static bool writeWav(const char* filename,
@@ -221,10 +273,42 @@ static bool writeWav(const char* filename,
 // ============ Main ============
 
 int main() {
-    // Phoneme sequence: は さ な ま ら や わ
-    constexpr int kPause = 882;                // 20 ms at 44.1 kHz
+    constexpr int kPause     = 882;    // 20 ms
+    constexpr int kLongPause = 13230;  // 300 ms（テスト間の区切り）
 
-    std::vector<PhonemeEntry> sequence = {
+    std::vector<PhonemeEntry> sequence;
+
+    // --- テスト1: か た ぱ（無声破裂音 /k,t,p/）---
+    append(sequence, makePlosiveCV(80, 10, 30, kSilence, kBurstK_A, kVotK_A, kVowelA, 120));
+    sequence.push_back({kSilence, kPause});
+    append(sequence, makePlosiveCV(70, 10, 20, kSilence, kBurstT, kVotT_A, kVowelA, 120));
+    sequence.push_back({kSilence, kPause});
+    append(sequence, makePlosiveCV(70, 10, 15, kSilence, kBurstP, kVotP_A, kVowelA, 120));
+    sequence.push_back({kSilence, kLongPause});
+
+    // --- テスト2: が だ ば（有声破裂音 /g,d,b/）---
+    append(sequence, makePlosiveCV(60, 5, 0, kVoiceBar, kBurstK_A, kVotK_A, kVowelA, 120));
+    sequence.push_back({kSilence, kPause});
+    append(sequence, makePlosiveCV(50, 5, 0, kVoiceBar, kBurstT, kVotT_A, kVowelA, 120));
+    sequence.push_back({kSilence, kPause});
+    append(sequence, makePlosiveCV(50, 5, 0, kVoiceBar, kBurstP, kVotP_A, kVowelA, 120));
+    sequence.push_back({kSilence, kLongPause});
+
+    // --- テスト3: かっぱ（促音テスト）---
+    append(sequence, makePlosiveCV(80, 10, 30, kSilence, kBurstK_A, kVotK_A, kVowelA, 100));
+    sequence.push_back({kSilence, kSokuonSamples});  // 促音 /Q/
+    append(sequence, makePlosiveCV(70, 10, 15, kSilence, kBurstP, kVotP_A, kVowelA, 120));
+    sequence.push_back({kSilence, kLongPause});
+
+    // --- テスト4: かんな（撥音テスト）---
+    append(sequence, makePlosiveCV(80, 10, 30, kSilence, kBurstK_A, kVotK_A, kVowelA, 100));
+    sequence.push_back({kNasalN, kHatsuonSamples});   // 撥音 /N/
+    sequence.push_back({kNasalN, ms2s(80)});           // な = /n/ + /a/
+    sequence.push_back({kVowelA, ms2s(120)});
+    sequence.push_back({kSilence, kLongPause});
+
+    // --- 既存テスト: は さ な ま ら や わ + あいうえお ---
+    sequence.insert(sequence.end(), {
         // は = /h/(80ms) + /a/(120ms)
         {kFricH_A, 3528},
         {kVowelA,  5292},
@@ -259,7 +343,7 @@ int main() {
         {kVowelU,  5292},
         {kVowelE,  5292},
         {kVowelO,  5292},
-    };
+    });
 
     Synthesizer synth;
     std::vector<int16_t> buf;
@@ -270,6 +354,7 @@ int main() {
     }
 
     std::cout << "Wrote output.wav (" << buf.size() << " samples, "
-              << sequence.size() << " segments: ha sa na ma ra ya wa + aiueo)\n";
+              << sequence.size() << " segments: ka ta pa + ga da ba"
+              << " + kappa + kanna + ha sa na ma ra ya wa + aiueo)\n";
     return 0;
 }
