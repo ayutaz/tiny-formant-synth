@@ -118,7 +118,6 @@ y  = a0*x - b1*z1 - b2*z2
 
 ## Reference
 
-- 参考動画: `ssstwitter.com_1772771421555.mp4`（元のC++実装のコード画面）
 - 全音素調査: `docs/research-full-phoneme-synthesis.md`
 - C++設計・マイルストーン詳細: `docs/cpp-architecture.md`
 - 基本パラメータ: サンプルレート 44100Hz, 基本周波数 160Hz, 振幅 0.9 * 32767
