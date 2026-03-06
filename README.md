@@ -108,6 +108,19 @@ writeWav()       ── 16bit PCM WAV (44100Hz, mono) 出力
 | 促音 | っ（120ms無音） |
 | 撥音 | ん（80ms鼻音） |
 
+## Samples
+
+[docs/samples/](docs/samples/) にサンプル音声・動画があります。
+
+| ファイル | 内容 |
+|----------|------|
+| [all.mp4](docs/samples/all.mp4) | 5文章の結合動画（テキスト表示付き） |
+| [こんにちは.wav](docs/samples/こんにちは.wav) | こんにちは |
+| [おはようございます.wav](docs/samples/おはようございます.wav) | おはようございます |
+| [ありがとう.wav](docs/samples/ありがとう.wav) | ありがとう |
+| [さようなら.wav](docs/samples/さようなら.wav) | さようなら |
+| [はじめまして.wav](docs/samples/はじめまして.wav) | はじめまして |
+
 ## Testing
 
 ```bash
@@ -142,15 +155,6 @@ make test    # 全19スイート / 176テストケースを実行
 | IntegrationMS6 | テキスト→合成パイプライン | 10 |
 
 </details>
-
-## Roadmap
-
-| MS | 内容 | 状態 |
-|----|------|------|
-| 1-4 | パイプライン骨格 → 5母音 → 子音 → 破裂音 | 完了 |
-| 5 | 破擦音 + 全摩擦音 → 全音素完成 | 完了 |
-| 6 | ひらがなテキスト入力 | 完了 |
-| 7 | ピッチ制御・品質改善 | 予定 |
 
 ## References
 
