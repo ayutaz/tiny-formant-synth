@@ -1,5 +1,5 @@
 CXX       ?= c++
-CXXFLAGS   = -std=c++17 -O2 -Wall -Wextra
+CXXFLAGS   = -std=c++20 -O2 -Wall -Wextra
 TARGET     = formant
 
 $(TARGET): formant.cpp

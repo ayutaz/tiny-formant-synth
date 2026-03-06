@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-C++17によるフォルマント音声合成器。日本語の全音素（母音・子音・濁音・半濁音・拗音・促音・撥音）を合成し、WAVファイルとして出力する。最終目標は約500行のコンパクトな単一ファイル実装。
+C++20によるフォルマント音声合成器。日本語の全音素（母音・子音・濁音・半濁音・拗音・促音・撥音）を合成し、WAVファイルとして出力する。最終目標は約500行のコンパクトな単一ファイル実装。
 
 ## Build & Run
 
 ```bash
 # 直接コンパイル
-clang++ -std=c++17 -O2 -Wall -o formant formant.cpp
+clang++ -std=c++20 -O2 -Wall -o formant formant.cpp
 
 # または Makefile
 make

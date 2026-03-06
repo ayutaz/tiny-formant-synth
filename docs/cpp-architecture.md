@@ -6,22 +6,22 @@
 
 ## 1. C++ 設計方針
 
-### 言語: C++17
+### 言語: C++20
 
 ```bash
-clang++ -std=c++17 -O2 -Wall -o formant formant.cpp
+clang++ -std=c++20 -O2 -Wall -o formant formant.cpp
 ./formant "こんにちは"    # output.wav を生成
 afplay output.wav         # macOS で再生
 ```
 
-macOS の clang++ は C++17 を完全サポート。Linux では `g++ -std=c++17` で同等。
+macOS の clang++ は C++20 を完全サポート。Linux では `g++ -std=c++20` で同等。
 `-lm` は C++ では通常不要だが付けても無害。
 
 ### ビルドシステム: Makefile（10行程度）
 
 ```makefile
 CXX       ?= c++
-CXXFLAGS   = -std=c++17 -O2 -Wall -Wextra
+CXXFLAGS   = -std=c++20 -O2 -Wall -Wextra
 TARGET     = formant
 
 $(TARGET): formant.cpp
@@ -122,7 +122,7 @@ private:
 
 ---
 
-## 3. C++17 機能の活用
+## 3. C++20 機能の活用
 
 ### 使う機能
 
@@ -134,6 +134,9 @@ private:
 | `constexpr` | フォルマントパラメータテーブル、数学定数 |
 | `std::string` / `std::string_view` | テキスト入力のUTF-8処理 |
 | `<cstdint>` | WAV出力の固定サイズ整数型 |
+| `std::numbers::pi` | M_PI の代替として数学定数に使用 |
+| designated initializers | `FormantParams{.f1=800, .f2=1200, ...}` で可読性向上 |
+| `std::span` | vector参照の代わりに使える（任意） |
 
 ### 使わない機能
 
