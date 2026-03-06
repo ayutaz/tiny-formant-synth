@@ -71,6 +71,9 @@ Makefile       // ビルド用
 | `PhonemeTable` | constexpr配列 | ~80行 | 🔲 未実装 | 28-29音素のパラメータテーブル（現在は個別constexpr変数） |
 | `Synthesizer` | class | ~150行 | 🔲 未実装 | 中核クラス（現在はmain内に直接ループとして実装） |
 | `TextToPhoneme` | 関数群 | ~70行 | 🔲 未実装 | ひらがなUTF-8→音素列変換 |
+| `makePlosiveCV` | 関数 | — | ✅ 実装済 | 破裂音CVのPhonemeEntry列を生成 |
+| `ms2s` | inline関数 | — | ✅ 実装済 | ミリ秒→サンプル数変換 |
+| `lerp` | 関数 | — | ✅ 実装済 | FormantParams間の線形補間 |
 | `WavWriter` | 関数1つ | ~40行 | ✅ 実装済 | WAVヘッダ+データ書き出し（`writeWav` 自由関数） |
 
 ### 依存関係（一方向の木構造）
@@ -281,7 +284,7 @@ MS1 → MS2 → [refactor] → MS3 → MS4 → [refactor] → MS5 → MS6 → [r
 
 **技術リスク: 中** — ノイズと声帯音源の振幅バランス調整。
 
-### MS4: 破裂音 + 促音 + 撥音（累計 ~405行）★最高リスク★
+### MS4: 破裂音 + 促音 + 撥音（累計 ~405行）★最高リスク★ ✅ 完了
 
 | タスク | 行数 |
 |--------|------|
@@ -295,6 +298,8 @@ MS1 → MS2 → [refactor] → MS3 → MS4 → [refactor] → MS5 → MS6 → [r
 **完了条件**: 「かたぱ」が区別でき、「がだば」が有声に聞こえる。「かっぱ」で促音が感じられる。
 
 **技術リスク: ★最高★** — VOTの時間配分、軟口蓋音のvelar pinch（後続母音依存）。
+
+**実績**: 実装360行。フェーズ分解方式（closure → burst → aspiration → transition の PhonemeEntry 列を `makePlosiveCV` で生成）により、Synthesizer クラスへの変更なしで破裂音を実現。
 
 **リファクタリングポイント2**: フェーズ制御・テーブル構造の整理。
 

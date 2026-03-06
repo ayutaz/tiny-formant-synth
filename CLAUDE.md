@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 C++20によるフォルマント音声合成器。日本語の全音素（母音・子音・濁音・半濁音・拗音・促音・撥音）を合成し、WAVファイルとして出力する。最終目標は約500行のコンパクトな単一ファイル実装。
 
-**現在の進捗**: MS1-MS3 完了（formant.cpp ~262行）。5母音 + 7子音 /h,s,n,m,ɾ,j,w/ を合成可能。
+**現在の進捗**: MS1-MS4 完了（formant.cpp ~360行）。5母音 + 13子音 /h,s,n,m,ɾ,j,w,p,b,t,d,k,g/ + 促音・撥音を合成可能。
 
 ## Build & Run
 
@@ -42,6 +42,10 @@ afplay output.wav         # macOS で再生
 | `NoiseGen` | struct | 実装済 | LCG乱数による白色雑音生成 |
 | `ImpulseTrain` | struct | 実装済 | 位相累積型インパルス列生成 |
 | `PhonemeEntry` | struct | 実装済 | FormantParams + duration_samples のペア |
+| `lerp` | 関数 | 実装済 | 線形補間ヘルパー |
+| `ms2s` | 関数 | 実装済 | ミリ秒→秒変換ヘルパー |
+| `append` | 関数 | 実装済 | サンプル列追記ヘルパー |
+| `makePlosiveCV` | 関数 | 実装済 | 破裂音CV音節の生成ヘルパー（closure→burst→VOT→遷移→定常） |
 | `writeWav` | 関数 | 実装済 | WAVヘッダ+データ書き出し（16bit/mono） |
 | `Synthesizer` | class | 未実装(MS4+) | 中核クラスへのリファクタリング予定 |
 | `TextToPhoneme` | 関数群 | 未実装(MS6) | ひらがなUTF-8 → 音素列変換 |
@@ -97,7 +101,7 @@ y  = a0*x - b1*z1 - b2*z2
 | 2 | 5母音 + フォルマント遷移 | ~215行 | 低 | ✅ 完了 |
 | 3 | ノイズ音源 + 7子音 /h,s,n,m,ɾ,j,w/ | ~262行 | 中 | ✅ 完了 |
 | R1 | Synthesizerクラス抽出 + lerp関数 | ~276行 | — | ✅ 完了 |
-| 4 | 破裂音 /p,b,t,d,k,g/ + 促音 + 撥音 | ~405行 | ★最高 | |
+| 4 | 破裂音 /p,b,t,d,k,g/ + 促音 + 撥音 | ~360行 | ★最高 | ✅ 完了 |
 | 5 | 破擦音 + 残り摩擦音 → 全音素完成 | ~473行 | 中高 | |
 | 6 | ひらがなテキスト入力対応 | ~558行 | 低 | |
 | 7 | （任意）ピッチ制御 + 品質改善 | ~628行 | — | |
