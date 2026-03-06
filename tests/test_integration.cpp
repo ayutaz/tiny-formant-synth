@@ -167,6 +167,137 @@ REGISTER_TEST(deterministic_output) {
     }
 }
 
+// 8. 破擦音 ち(tɕi) をフルパイプラインで合成→WAV書き出し→ファイルサイズ確認→削除
+REGISTER_TEST(affricate_chi_full_pipeline) {
+    const char* path = "/tmp/test_integration_ms5_chi.wav";
+
+    auto chi = makePlosiveCV(70, 5, 80, kSilence, kBurstTCh, kFricSh, kVowelI, 120);
+
+    // 期待サンプル数
+    int expected_samples = ms2s(70) + ms2s(5) + ms2s(80) + ms2s(120);
+
+    Synthesizer synth;
+    std::vector<int16_t> output;
+    synth.synthesize(chi, output);
+    ASSERT_EQ(static_cast<int>(output.size()), expected_samples);
+
+    // WAV書き出し
+    bool ok = writeWav(path, output, static_cast<int>(kSampleRate));
+    ASSERT_TRUE(ok);
+
+    // ファイルサイズ確認: 44バイトヘッダ + サンプル数 * 2
+    auto fsize = std::filesystem::file_size(path);
+    auto expected_fsize = static_cast<std::uintmax_t>(44 + expected_samples * 2);
+    ASSERT_EQ(fsize, expected_fsize);
+
+    std::filesystem::remove(path);
+}
+
+// 9. さ行5音節(さしすせそ)を合成し出力サイズが正しいか
+REGISTER_TEST(sa_row_sequence) {
+    std::vector<PhonemeEntry> sequence;
+
+    // さ [sa]
+    sequence.push_back({kFricS, ms2s(120)});
+    sequence.push_back({kVowelA, ms2s(120)});
+    // し [ɕi]
+    sequence.push_back({kFricSh, ms2s(120)});
+    sequence.push_back({kVowelI, ms2s(120)});
+    // す [sɯ]
+    sequence.push_back({kFricS, ms2s(120)});
+    sequence.push_back({kVowelU, ms2s(120)});
+    // せ [se]
+    sequence.push_back({kFricS, ms2s(120)});
+    sequence.push_back({kVowelE, ms2s(120)});
+    // そ [so]
+    sequence.push_back({kFricS, ms2s(120)});
+    sequence.push_back({kVowelO, ms2s(120)});
+
+    int expected = 10 * ms2s(120); // 10 segments x 120ms each
+
+    Synthesizer synth;
+    std::vector<int16_t> output;
+    synth.synthesize(sequence, output);
+    ASSERT_EQ(static_cast<int>(output.size()), expected);
+}
+
+// 10. は行5音節(はひふへほ)を合成し出力サイズが正しいか
+REGISTER_TEST(ha_row_sequence) {
+    std::vector<PhonemeEntry> sequence;
+
+    // は [ha]
+    sequence.push_back({kFricH_A, ms2s(80)});
+    sequence.push_back({kVowelA, ms2s(120)});
+    // ひ [çi]
+    sequence.push_back({kFricChi, ms2s(100)});
+    sequence.push_back({kVowelI, ms2s(120)});
+    // ふ [ɸɯ]
+    sequence.push_back({kFricPhi, ms2s(100)});
+    sequence.push_back({kVowelU, ms2s(120)});
+    // へ [he]
+    sequence.push_back({kFricH_E, ms2s(80)});
+    sequence.push_back({kVowelE, ms2s(120)});
+    // ほ [ho]
+    sequence.push_back({kFricH_O, ms2s(80)});
+    sequence.push_back({kVowelO, ms2s(120)});
+
+    int expected = 3 * ms2s(80) + 2 * ms2s(100) + 5 * ms2s(120);
+
+    Synthesizer synth;
+    std::vector<int16_t> output;
+    synth.synthesize(sequence, output);
+    ASSERT_EQ(static_cast<int>(output.size()), expected);
+}
+
+// 11. ざ行5音節(ざじずぜぞ)を合成し出力サイズが正しいか
+REGISTER_TEST(za_row_sequence) {
+    std::vector<PhonemeEntry> sequence;
+
+    // ざ [dza]
+    append(sequence, makePlosiveCV(40, 5, 50, kVoiceBar, kBurstTs, kFricZ, kVowelA, 120));
+    // じ [dʑi]
+    append(sequence, makePlosiveCV(40, 5, 60, kVoiceBar, kBurstTCh, kFricZh, kVowelI, 120));
+    // ず [dzɯ]
+    append(sequence, makePlosiveCV(40, 5, 50, kVoiceBar, kBurstTs, kFricZ, kVowelU, 120));
+    // ぜ [dze]
+    append(sequence, makePlosiveCV(40, 5, 50, kVoiceBar, kBurstTs, kFricZ, kVowelE, 120));
+    // ぞ [dzo]
+    append(sequence, makePlosiveCV(40, 5, 50, kVoiceBar, kBurstTs, kFricZ, kVowelO, 120));
+
+    // 各音節のサンプル数を計算
+    int za = ms2s(40) + ms2s(5) + ms2s(50) + ms2s(120); // ざ,ず,ぜ,ぞ
+    int ji = ms2s(40) + ms2s(5) + ms2s(60) + ms2s(120); // じ
+    int expected = 4 * za + ji;
+
+    Synthesizer synth;
+    std::vector<int16_t> output;
+    synth.synthesize(sequence, output);
+    ASSERT_EQ(static_cast<int>(output.size()), expected);
+}
+
+// 12. Mixed音源を含むシーケンスを2回合成して同じ結果か（決定的であること確認）
+REGISTER_TEST(mixed_source_deterministic) {
+    auto run_synth = []() {
+        Synthesizer synth;
+        std::vector<PhonemeEntry> sequence;
+        // ざ行(Mixed音源)を含むシーケンス
+        append(sequence, makePlosiveCV(40, 5, 50, kVoiceBar, kBurstTs, kFricZ, kVowelA, 120));
+        sequence.push_back({kFricZh, ms2s(80)});
+        sequence.push_back({kVowelI, ms2s(120)});
+        std::vector<int16_t> output;
+        synth.synthesize(sequence, output);
+        return output;
+    };
+
+    auto out1 = run_synth();
+    auto out2 = run_synth();
+
+    ASSERT_EQ(static_cast<int>(out1.size()), static_cast<int>(out2.size()));
+    for (int i = 0; i < static_cast<int>(out1.size()); ++i) {
+        ASSERT_EQ(out1[i], out2[i]);
+    }
+}
+
 int main() {
     return run_all_tests("Integration");
 }

@@ -1,4 +1,4 @@
-// formant.cpp — MS4: Plosives /p,b,t,d,k,g/ + sokuon + hatsuon
+// formant.cpp — MS5: Full phoneme set (affricates + remaining fricatives)
 // Build: make  (expects -std=c++20 -O2 -Wall -Wextra)
 
 #include <cstdint>
@@ -18,7 +18,7 @@ constexpr double kAmplitude   = 0.9 * 32767.0;
 constexpr double kPi          = std::numbers::pi;
 constexpr int    kFrameSize   = 220;           // 5 ms at 44.1 kHz
 
-enum class SourceType { Impulse, Noise };
+enum class SourceType { Impulse, Noise, Mixed };
 
 struct FormantParams {
     double f1, f2, f3;
@@ -123,9 +123,14 @@ public:
                 }
 
                 // 音源生成
-                double s = (cur.source == SourceType::Noise)
-                    ? noise_.next()
-                    : impulse_.next(kF0, kSampleRate);
+                double s;
+                switch (cur.source) {
+                    case SourceType::Noise: s = noise_.next(); break;
+                    case SourceType::Mixed:
+                        s = 0.6 * noise_.next() + 0.4 * impulse_.next(kF0, kSampleRate);
+                        break;
+                    default: s = impulse_.next(kF0, kSampleRate); break;
+                }
 
                 // カスケードフィルタ
                 for (auto& f : filters_) s = f.process(s);
@@ -169,6 +174,18 @@ constexpr FormantParams kNasalN = {250, 1700, 2600, 180, 200, 250, 0.3, SourceTy
 constexpr FormantParams kFricH_A = {800, 1200, 2600, 200, 300, 400, 0.15, SourceType::Noise};
 // /s/ は高域ノイズが特徴（F1=200で低域を広く減衰）
 constexpr FormantParams kFricS   = {200, 5500, 7500, 500, 3000, 2000, 0.4, SourceType::Noise};
+// /ɕ/ (し) — 歯茎硬口蓋摩擦音（/s/より低域寄り）
+constexpr FormantParams kFricSh  = {200, 3800, 6000, 500, 2500, 2000, 0.4, SourceType::Noise};
+// /ç/ (ひ) — 硬口蓋摩擦音
+constexpr FormantParams kFricChi = {200, 3000, 5000, 500, 2000, 2000, 0.3, SourceType::Noise};
+// /ɸ/ (ふ) — 両唇摩擦音
+constexpr FormantParams kFricPhi = {200, 2500, 4000, 500, 3000, 2000, 0.15, SourceType::Noise};
+// /h/ の後続母音別変種
+constexpr FormantParams kFricH_E = {500, 1900, 2600, 200, 300, 400, 0.15, SourceType::Noise};
+constexpr FormantParams kFricH_O = {500,  800, 2400, 200, 300, 400, 0.15, SourceType::Noise};
+// 有声摩擦音（混合音源: ノイズ0.6 + インパルス0.4）
+constexpr FormantParams kFricZ   = {200, 5500, 7500, 500, 3000, 2000, 0.3, SourceType::Mixed};
+constexpr FormantParams kFricZh  = {200, 3800, 6000, 500, 2500, 2000, 0.3, SourceType::Mixed};
 
 // 無音（gain=0、低周波ダミー値）
 constexpr FormantParams kSilence = {100, 100, 100, 100, 100, 100, 0.0, SourceType::Impulse};
@@ -182,6 +199,9 @@ constexpr FormantParams kVoiceBar = {200, 200, 200, 100, 200, 300, 0.08, SourceT
 constexpr FormantParams kBurstP   = {300, 1000, 2300, 500, 1500, 2000, 0.30, SourceType::Noise};
 constexpr FormantParams kBurstT   = {300, 4000, 5000, 500, 2000, 2000, 0.35, SourceType::Noise};
 constexpr FormantParams kBurstK_A = {300, 1800, 2600, 500, 2000, 2000, 0.30, SourceType::Noise};
+// 破擦音バースト
+constexpr FormantParams kBurstTCh = {300, 3800, 6000, 500, 2000, 2000, 0.35, SourceType::Noise};
+constexpr FormantParams kBurstTs  = {300, 5500, 7500, 500, 2500, 2000, 0.35, SourceType::Noise};
 
 // VOT/気息パラメータ（後続母音 /a/ 向け — 母音フォルマントベースにBW広・gain小）
 constexpr FormantParams kVotP_A = {800, 1200, 2600, 300, 400, 500, 0.10, SourceType::Noise};
@@ -275,7 +295,7 @@ static bool writeWav(const char* filename,
 #ifndef TEST_BUILD
 int main() {
     constexpr int kPause     = 882;    // 20 ms
-    constexpr int kLongPause = 13230;  // 300 ms（テスト間の区切り）
+    constexpr int kLongPause = 13230;  // 300 ms
 
     std::vector<PhonemeEntry> sequence;
 
@@ -295,55 +315,73 @@ int main() {
     append(sequence, makePlosiveCV(50, 5, 0, kVoiceBar, kBurstP, kVotP_A, kVowelA, 120));
     sequence.push_back({kSilence, kLongPause});
 
-    // --- テスト3: かっぱ（促音テスト）---
+    // --- テスト3: ち つ（無声破擦音 /tɕ,ts/）---
+    append(sequence, makePlosiveCV(70, 5, 80, kSilence, kBurstTCh, kFricSh, kVowelI, 120));
+    sequence.push_back({kSilence, kPause});
+    append(sequence, makePlosiveCV(70, 5, 70, kSilence, kBurstTs, kFricS, kVowelU, 120));
+    sequence.push_back({kSilence, kLongPause});
+
+    // --- テスト4: ざ じ ず ぜ ぞ（有声破擦音/摩擦音）---
+    // ざ [dza]
+    append(sequence, makePlosiveCV(40, 5, 50, kVoiceBar, kBurstTs, kFricZ, kVowelA, 120));
+    sequence.push_back({kSilence, kPause});
+    // じ [dʑi]
+    append(sequence, makePlosiveCV(40, 5, 60, kVoiceBar, kBurstTCh, kFricZh, kVowelI, 120));
+    sequence.push_back({kSilence, kPause});
+    // ず [dzɯ]
+    append(sequence, makePlosiveCV(40, 5, 50, kVoiceBar, kBurstTs, kFricZ, kVowelU, 120));
+    sequence.push_back({kSilence, kPause});
+    // ぜ [dze]
+    append(sequence, makePlosiveCV(40, 5, 50, kVoiceBar, kBurstTs, kFricZ, kVowelE, 120));
+    sequence.push_back({kSilence, kPause});
+    // ぞ [dzo]
+    append(sequence, makePlosiveCV(40, 5, 50, kVoiceBar, kBurstTs, kFricZ, kVowelO, 120));
+    sequence.push_back({kSilence, kLongPause});
+
+    // --- テスト5: し す せ そ（さ行 — し=/ɕ/、他=/s/）---
+    sequence.insert(sequence.end(), {
+        {kFricSh, ms2s(120)}, {kVowelI, ms2s(120)}, {kSilence, kPause},
+        {kFricS,  ms2s(120)}, {kVowelU, ms2s(120)}, {kSilence, kPause},
+        {kFricS,  ms2s(120)}, {kVowelE, ms2s(120)}, {kSilence, kPause},
+        {kFricS,  ms2s(120)}, {kVowelO, ms2s(120)}, {kSilence, kLongPause},
+    });
+
+    // --- テスト6: は ひ ふ へ ほ（は行 — 条件異音）---
+    sequence.insert(sequence.end(), {
+        {kFricH_A,  ms2s(80)}, {kVowelA, ms2s(120)}, {kSilence, kPause},
+        {kFricChi,  ms2s(100)}, {kVowelI, ms2s(120)}, {kSilence, kPause},
+        {kFricPhi,  ms2s(100)}, {kVowelU, ms2s(120)}, {kSilence, kPause},
+        {kFricH_E,  ms2s(80)}, {kVowelE, ms2s(120)}, {kSilence, kPause},
+        {kFricH_O,  ms2s(80)}, {kVowelO, ms2s(120)}, {kSilence, kLongPause},
+    });
+
+    // --- テスト7: かっぱ（促音テスト）---
     append(sequence, makePlosiveCV(80, 10, 30, kSilence, kBurstK_A, kVotK_A, kVowelA, 100));
-    sequence.push_back({kSilence, kSokuonSamples});  // 促音 /Q/
+    sequence.push_back({kSilence, kSokuonSamples});
     append(sequence, makePlosiveCV(70, 10, 15, kSilence, kBurstP, kVotP_A, kVowelA, 120));
     sequence.push_back({kSilence, kLongPause});
 
-    // --- テスト4: かんな（撥音テスト）---
+    // --- テスト8: かんな（撥音テスト）---
     append(sequence, makePlosiveCV(80, 10, 30, kSilence, kBurstK_A, kVotK_A, kVowelA, 100));
-    sequence.push_back({kNasalN, kHatsuonSamples});   // 撥音 /N/
-    sequence.push_back({kNasalN, ms2s(80)});           // な = /n/ + /a/
+    sequence.push_back({kNasalN, kHatsuonSamples});
+    sequence.push_back({kNasalN, ms2s(80)});
     sequence.push_back({kVowelA, ms2s(120)});
     sequence.push_back({kSilence, kLongPause});
 
-    // --- 既存テスト: は さ な ま ら や わ + あいうえお ---
+    // --- テスト9: は さ な ま ら や わ + あいうえお ---
     sequence.insert(sequence.end(), {
-        // は = /h/(80ms) + /a/(120ms)
-        {kFricH_A, 3528},
-        {kVowelA,  5292},
-        {kSilence, kPause},
-        // さ = /s/(120ms) + /a/(120ms)
-        {kFricS,   5292},
-        {kVowelA,  5292},
-        {kSilence, kPause},
-        // な = /n/(80ms) + /a/(120ms)
-        {kNasalN,  3528},
-        {kVowelA,  5292},
-        {kSilence, kPause},
-        // ま = /m/(80ms) + /a/(120ms)
-        {kNasalM,  3528},
-        {kVowelA,  5292},
-        {kSilence, kPause},
-        // ら = /ɾ/(30ms) + /a/(120ms)
-        {kTapR,    1323},
-        {kVowelA,  5292},
-        {kSilence, kPause},
-        // や = /j/(60ms) + /a/(120ms)
-        {kSemiJ,   2646},
-        {kVowelA,  5292},
-        {kSilence, kPause},
-        // わ = /w/(60ms) + /a/(120ms)
-        {kSemiW,   2646},
-        {kVowelA,  5292},
-        {kSilence, kPause},
-        // 5母音: あいうえお
-        {kVowelA,  5292},
-        {kVowelI,  5292},
-        {kVowelU,  5292},
-        {kVowelE,  5292},
-        {kVowelO,  5292},
+        {kFricH_A, ms2s(80)},  {kVowelA, ms2s(120)}, {kSilence, kPause},
+        {kFricS,   ms2s(120)}, {kVowelA, ms2s(120)}, {kSilence, kPause},
+        {kNasalN,  ms2s(80)},  {kVowelA, ms2s(120)}, {kSilence, kPause},
+        {kNasalM,  ms2s(80)},  {kVowelA, ms2s(120)}, {kSilence, kPause},
+        {kTapR,    ms2s(30)},  {kVowelA, ms2s(120)}, {kSilence, kPause},
+        {kSemiJ,   ms2s(60)},  {kVowelA, ms2s(120)}, {kSilence, kPause},
+        {kSemiW,   ms2s(60)},  {kVowelA, ms2s(120)}, {kSilence, kPause},
+        {kVowelA, ms2s(120)},
+        {kVowelI, ms2s(120)},
+        {kVowelU, ms2s(120)},
+        {kVowelE, ms2s(120)},
+        {kVowelO, ms2s(120)},
     });
 
     Synthesizer synth;
@@ -355,8 +393,7 @@ int main() {
     }
 
     std::cout << "Wrote output.wav (" << buf.size() << " samples, "
-              << sequence.size() << " segments: ka ta pa + ga da ba"
-              << " + kappa + kanna + ha sa na ma ra ya wa + aiueo)\n";
+              << sequence.size() << " segments: MS5 full phoneme test)\n";
     return 0;
 }
 #endif // TEST_BUILD

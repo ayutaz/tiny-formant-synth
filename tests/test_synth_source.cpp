@@ -123,6 +123,54 @@ REGISTER_TEST(different_formants_produce_different_rms) {
     ASSERT_GT(diff, 0.0);
 }
 
+// 6. Mixed音源: kFricZ(4410サンプル)を合成し、非ゼロサンプルが半数以上か
+REGISTER_TEST(mixed_source_produces_nonzero_output) {
+    Synthesizer synth;
+    std::vector<int16_t> buf;
+    std::vector<PhonemeEntry> seq = {{kFricZ, 4410}};
+    synth.synthesize(seq, buf);
+
+    ASSERT_EQ(static_cast<int>(buf.size()), 4410);
+    int nz = count_nonzero(buf);
+    // Mixed音源: 半数以上が非ゼロ
+    ASSERT_GT(nz, 2205);
+}
+
+// 7. Mixed音源: kFricZ(4410サンプル)合成のRMSが0より大きいか
+REGISTER_TEST(mixed_source_rms_positive) {
+    Synthesizer synth;
+    std::vector<int16_t> buf;
+    std::vector<PhonemeEntry> seq = {{kFricZ, 4410}};
+    synth.synthesize(seq, buf);
+
+    double rms = calc_rms(buf);
+    ASSERT_GT(rms, 0.0);
+}
+
+// 8. Mixed音源とNoise音源の違い: kFricZ(Mixed)とkFricS(Noise)で合成した
+//    結果のRMSが異なるか
+REGISTER_TEST(mixed_differs_from_pure_noise) {
+    Synthesizer synth1;
+    std::vector<int16_t> buf1;
+    std::vector<PhonemeEntry> seq1 = {{kFricZ, 4410}};
+    synth1.synthesize(seq1, buf1);
+
+    Synthesizer synth2;
+    std::vector<int16_t> buf2;
+    std::vector<PhonemeEntry> seq2 = {{kFricS, 4410}};
+    synth2.synthesize(seq2, buf2);
+
+    double rms_mixed = calc_rms(buf1);
+    double rms_noise = calc_rms(buf2);
+
+    // 両方とも非ゼロ
+    ASSERT_GT(rms_mixed, 0.0);
+    ASSERT_GT(rms_noise, 0.0);
+    // Mixed と Noise は異なるRMS値
+    double diff = std::abs(rms_mixed - rms_noise);
+    ASSERT_GT(diff, 0.0);
+}
+
 int main() {
     return run_all_tests("SynthSource");
 }
