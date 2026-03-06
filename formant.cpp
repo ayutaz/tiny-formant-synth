@@ -272,6 +272,7 @@ static bool writeWav(const char* filename,
 
 // ============ Main ============
 
+#ifndef TEST_BUILD
 int main() {
     constexpr int kPause     = 882;    // 20 ms
     constexpr int kLongPause = 13230;  // 300 ms（テスト間の区切り）
@@ -358,3 +359,4 @@ int main() {
               << " + kappa + kanna + ha sa na ma ra ya wa + aiueo)\n";
     return 0;
 }
+#endif // TEST_BUILD
