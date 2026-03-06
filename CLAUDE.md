@@ -118,8 +118,6 @@ y  = a0*x - b1*z1 - b2*z2
 
 ## Reference
 
-- 全音素調査: `docs/research-full-phoneme-synthesis.md`
-- C++設計・マイルストーン詳細: `docs/cpp-architecture.md`
 - 基本パラメータ: サンプルレート 44100Hz, 基本周波数 160Hz, 振幅 0.9 * 32767
 - 参考実装: eSpeak NG `klatt.c`（~820行、C言語）
 - 文献: Klatt (1980) "Software for a cascade/parallel formant synthesizer" JASA 67(3); Stevens (1998) *Acoustic Phonetics*
