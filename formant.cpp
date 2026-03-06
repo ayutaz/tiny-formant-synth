@@ -1,4 +1,4 @@
-// formant.cpp — MS1: Pipeline skeleton, vowel "a" (あ)
+// formant.cpp — MS2: Five vowels with formant transitions (あいうえお)
 // Build: make  (expects -std=c++20 -O2 -Wall -Wextra)
 
 #include <cstdint>
@@ -15,9 +15,13 @@
 constexpr double kSampleRate  = 44100.0;
 constexpr double kF0          = 160.0;
 constexpr double kAmplitude   = 0.9 * 32767.0;
-constexpr double kDuration    = 1.0;
-constexpr int    kNumSamples  = static_cast<int>(kSampleRate * kDuration);
 constexpr double kPi          = std::numbers::pi;
+constexpr int    kFrameSize   = 220;           // 5 ms at 44.1 kHz
+
+struct FormantParams {
+    double f1, f2, f3;
+    double bw1, bw2, bw3;
+};
 
 // ============ Resonator ============
 
@@ -40,6 +44,19 @@ struct Resonator {
     }
 
     void reset() { z1 = z2 = 0; }
+};
+
+// ============ Phoneme Data ============
+
+constexpr FormantParams kVowelA = {800, 1200, 2600, 80, 100, 120};
+constexpr FormantParams kVowelI = {300, 2300, 3000, 80, 120, 150};
+constexpr FormantParams kVowelU = {350, 1300, 2500, 80, 100, 120};
+constexpr FormantParams kVowelE = {500, 1900, 2600, 80, 100, 120};
+constexpr FormantParams kVowelO = {500,  800, 2400, 80, 100, 120};
+
+struct PhonemeEntry {
+    FormantParams params;
+    int duration_samples;
 };
 
 // ============ Source Generation ============
@@ -105,37 +122,59 @@ static bool writeWav(const char* filename,
 // ============ Main ============
 
 int main() {
-    // Formant parameters for vowel "a" (あ)
-    //          freq   bw
-    struct FParam { double freq; double bw; };
-    constexpr std::array<FParam, 3> formants = {{
-        {800.0,  80.0},
-        {1200.0, 100.0},
-        {2600.0, 120.0},
-    }};
+    // Phoneme sequence: あ い う え お (each 200 ms)
+    constexpr int kSegDur = 8820;              // 200 ms at 44.1 kHz
+    std::vector<PhonemeEntry> sequence = {
+        {kVowelA, kSegDur},
+        {kVowelI, kSegDur},
+        {kVowelU, kSegDur},
+        {kVowelE, kSegDur},
+        {kVowelO, kSegDur},
+    };
 
-    // Set up resonators
+    int totalSamples = 0;
+    for (auto& e : sequence) totalSamples += e.duration_samples;
+
+    // Resonators & source — kept alive across segments for continuity
     std::array<Resonator, 3> res{};
-    for (std::size_t i = 0; i < formants.size(); ++i) {
-        res[i].set(formants[i].freq, formants[i].bw, kSampleRate);
-    }
-
-    // Synthesise
     ImpulseTrain src;
-    std::vector<int16_t> buf(kNumSamples);
+    std::vector<int16_t> buf(totalSamples);
 
-    for (int n = 0; n < kNumSamples; ++n) {
-        double s = src.next(kF0, kSampleRate);
+    int pos = 0;
+    for (std::size_t seg = 0; seg < sequence.size(); ++seg) {
+        const auto& cur = sequence[seg].params;
+        const auto& nxt = (seg + 1 < sequence.size())
+                              ? sequence[seg + 1].params : cur;
+        int dur = sequence[seg].duration_samples;
 
-        // Cascade: F1 -> F2 -> F3
-        s = res[0].process(s);
-        s = res[1].process(s);
-        s = res[2].process(s);
+        for (int n = 0; n < dur; ++n) {
+            // Update filter coefficients once per frame
+            if (n % kFrameSize == 0) {
+                double t = static_cast<double>(n) / dur;
+                double blend = (t > 0.7) ? (t - 0.7) / 0.3 : 0.0;
 
-        // Scale and clamp to int16 range
-        double out = s * kAmplitude;
-        out = std::clamp(out, -32768.0, 32767.0);
-        buf[n] = static_cast<int16_t>(out);
+                double f1  = cur.f1  + (nxt.f1  - cur.f1)  * blend;
+                double f2  = cur.f2  + (nxt.f2  - cur.f2)  * blend;
+                double f3  = cur.f3  + (nxt.f3  - cur.f3)  * blend;
+                double bw1 = cur.bw1 + (nxt.bw1 - cur.bw1) * blend;
+                double bw2 = cur.bw2 + (nxt.bw2 - cur.bw2) * blend;
+                double bw3 = cur.bw3 + (nxt.bw3 - cur.bw3) * blend;
+
+                res[0].set(f1, bw1, kSampleRate);
+                res[1].set(f2, bw2, kSampleRate);
+                res[2].set(f3, bw3, kSampleRate);
+            }
+
+            // Source -> Cascade: F1 -> F2 -> F3
+            double s = src.next(kF0, kSampleRate);
+            s = res[0].process(s);
+            s = res[1].process(s);
+            s = res[2].process(s);
+
+            double out = s * kAmplitude;
+            out = std::clamp(out, -32768.0, 32767.0);
+            buf[pos++] = static_cast<int16_t>(out);
+        }
     }
 
     // Write WAV
@@ -143,6 +182,7 @@ int main() {
         return 1;
     }
 
-    std::cout << "Wrote output.wav\n";
+    std::cout << "Wrote output.wav (" << totalSamples << " samples, "
+              << sequence.size() << " vowels)\n";
     return 0;
 }
