@@ -1,4 +1,4 @@
-// formant.cpp — MS3: Noise source + 7 consonants /h,s,n,m,ɾ,j,w/
+// formant.cpp — MS3: Noise source + 7 consonants (refactored)
 // Build: make  (expects -std=c++20 -O2 -Wall -Wextra)
 
 #include <cstdint>
@@ -27,6 +27,20 @@ struct FormantParams {
     SourceType source = SourceType::Impulse;
 };
 
+// FormantParams 間の線形補間
+static FormantParams lerp(const FormantParams& a, const FormantParams& b, double t) {
+    return {
+        a.f1 + (b.f1 - a.f1) * t,
+        a.f2 + (b.f2 - a.f2) * t,
+        a.f3 + (b.f3 - a.f3) * t,
+        a.bw1 + (b.bw1 - a.bw1) * t,
+        a.bw2 + (b.bw2 - a.bw2) * t,
+        a.bw3 + (b.bw3 - a.bw3) * t,
+        a.gain + (b.gain - a.gain) * t,
+        a.source,  // 音源タイプは補間しない（現在のセグメントの値を使用）
+    };
+}
+
 // ============ Resonator ============
 
 struct Resonator {
@@ -48,6 +62,87 @@ struct Resonator {
     }
 
     void reset() { z1 = z2 = 0; }
+};
+
+// ============ Source Generation ============
+
+struct NoiseGen {
+    uint32_t seed = 22695477;
+    double next() {
+        seed = seed * 1664525 + 1013904223;  // LCG
+        return static_cast<double>(static_cast<int32_t>(seed)) / 2147483648.0;
+    }
+};
+
+struct ImpulseTrain {
+    double phase = 0.0;
+
+    double next(double f0, double fs) {
+        phase += f0 / fs;
+        if (phase >= 1.0) {
+            phase -= 1.0;
+            return 1.0;
+        }
+        return 0.0;
+    }
+};
+
+// ============ Synthesizer ============
+
+struct PhonemeEntry {
+    FormantParams params;
+    int duration_samples;
+};
+
+class Synthesizer {
+public:
+    void synthesize(const std::vector<PhonemeEntry>& sequence,
+                    std::vector<int16_t>& output) {
+        int totalSamples = 0;
+        for (auto& e : sequence) totalSamples += e.duration_samples;
+        output.resize(totalSamples);
+
+        int pos = 0;
+        for (std::size_t seg = 0; seg < sequence.size(); ++seg) {
+            const auto& cur = sequence[seg].params;
+            const auto& nxt = (seg + 1 < sequence.size())
+                                  ? sequence[seg + 1].params : cur;
+            int dur = sequence[seg].duration_samples;
+
+            for (int n = 0; n < dur; ++n) {
+                // フレーム境界でフィルタ係数更新
+                if (n % kFrameSize == 0) {
+                    double t = static_cast<double>(n) / dur;
+                    double blend = (t > 0.7) ? (t - 0.7) / 0.3 : 0.0;
+                    auto p = lerp(cur, nxt, blend);
+
+                    filters_[0].set(p.f1, p.bw1, kSampleRate);
+                    filters_[1].set(p.f2, p.bw2, kSampleRate);
+                    filters_[2].set(p.f3, p.bw3, kSampleRate);
+                    currentGain_ = p.gain;
+                }
+
+                // 音源生成
+                double s = (cur.source == SourceType::Noise)
+                    ? noise_.next()
+                    : impulse_.next(kF0, kSampleRate);
+
+                // カスケードフィルタ
+                for (auto& f : filters_) s = f.process(s);
+
+                // 出力
+                double out = s * kAmplitude * currentGain_;
+                out = std::clamp(out, -32768.0, 32767.0);
+                output[pos++] = static_cast<int16_t>(out);
+            }
+        }
+    }
+
+private:
+    std::array<Resonator, 3> filters_{};
+    ImpulseTrain impulse_;
+    NoiseGen noise_;
+    double currentGain_ = 1.0;
 };
 
 // ============ Phoneme Data ============
@@ -77,34 +172,6 @@ constexpr FormantParams kFricS   = {200, 5500, 7500, 500, 3000, 2000, 0.4, Sourc
 
 // 無音（gain=0、低周波ダミー値）
 constexpr FormantParams kSilence = {100, 100, 100, 100, 100, 100, 0.0, SourceType::Impulse};
-
-struct PhonemeEntry {
-    FormantParams params;
-    int duration_samples;
-};
-
-// ============ Source Generation ============
-
-struct NoiseGen {
-    uint32_t seed = 22695477;
-    double next() {
-        seed = seed * 1664525 + 1013904223;  // LCG
-        return static_cast<double>(static_cast<int32_t>(seed)) / 2147483648.0;
-    }
-};
-
-struct ImpulseTrain {
-    double phase = 0.0;
-
-    double next(double f0, double fs) {
-        phase += f0 / fs;
-        if (phase >= 1.0) {
-            phase -= 1.0;
-            return 1.0;
-        }
-        return 0.0;
-    }
-};
 
 // ============ WAV Writer ============
 
@@ -194,69 +261,15 @@ int main() {
         {kVowelO,  5292},
     };
 
-    int totalSamples = 0;
-    for (auto& e : sequence) totalSamples += e.duration_samples;
+    Synthesizer synth;
+    std::vector<int16_t> buf;
+    synth.synthesize(sequence, buf);
 
-    // Resonators & sources — kept alive across segments for continuity
-    std::array<Resonator, 3> res{};
-    ImpulseTrain impulse;
-    NoiseGen noise;
-    std::vector<int16_t> buf(totalSamples);
-
-    int pos = 0;
-    for (std::size_t seg = 0; seg < sequence.size(); ++seg) {
-        const auto& cur = sequence[seg].params;
-        const auto& nxt = (seg + 1 < sequence.size())
-                              ? sequence[seg + 1].params : cur;
-        int dur = sequence[seg].duration_samples;
-
-        double currentGain = cur.gain;
-        SourceType currentSource = cur.source;
-
-        for (int n = 0; n < dur; ++n) {
-            // Update filter coefficients & interpolated params once per frame
-            if (n % kFrameSize == 0) {
-                double t = static_cast<double>(n) / dur;
-                double blend = (t > 0.7) ? (t - 0.7) / 0.3 : 0.0;
-
-                double f1  = cur.f1  + (nxt.f1  - cur.f1)  * blend;
-                double f2  = cur.f2  + (nxt.f2  - cur.f2)  * blend;
-                double f3  = cur.f3  + (nxt.f3  - cur.f3)  * blend;
-                double bw1 = cur.bw1 + (nxt.bw1 - cur.bw1) * blend;
-                double bw2 = cur.bw2 + (nxt.bw2 - cur.bw2) * blend;
-                double bw3 = cur.bw3 + (nxt.bw3 - cur.bw3) * blend;
-                currentGain = cur.gain + (nxt.gain - cur.gain) * blend;
-
-                res[0].set(f1, bw1, kSampleRate);
-                res[1].set(f2, bw2, kSampleRate);
-                res[2].set(f3, bw3, kSampleRate);
-            }
-
-            // Source selection: Impulse or Noise
-            double s;
-            if (currentSource == SourceType::Noise) {
-                s = noise.next();
-            } else {
-                s = impulse.next(kF0, kSampleRate);
-            }
-
-            // Cascade: F1 -> F2 -> F3
-            s = res[0].process(s);
-            s = res[1].process(s);
-            s = res[2].process(s);
-
-            double out = s * kAmplitude * currentGain;
-            out = std::clamp(out, -32768.0, 32767.0);
-            buf[pos++] = static_cast<int16_t>(out);
-        }
-    }
-
-    // Write WAV
     if (!writeWav("output.wav", buf, static_cast<int>(kSampleRate))) {
         return 1;
     }
 
-    std::cout << "Wrote output.wav (" << totalSamples << " samples, "
+    std::cout << "Wrote output.wav (" << buf.size() << " samples, "
               << sequence.size() << " segments: ha sa na ma ra ya wa + aiueo)\n";
     return 0;
 }
