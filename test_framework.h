@@ -5,23 +5,7 @@
 #include <vector>
 #include <cmath>
 #include <functional>
-
-struct TestResult {
-    std::string name;
-    bool passed;
-    std::string message;
-};
-
-static std::vector<TestResult> g_results;
-static int g_pass = 0, g_fail = 0;
-
-#define TEST(name) \
-    static void test_##name(); \
-    static bool reg_##name = (g_results.push_back({#name, true, ""}), true); \
-    [[maybe_unused]] static struct Register_##name { \
-        Register_##name() {} \
-    } s_reg_##name; \
-    static void test_##name()
+#include <stdexcept>
 
 #define ASSERT_TRUE(expr) \
     do { if (!(expr)) { \
